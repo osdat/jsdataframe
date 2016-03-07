@@ -1,0 +1,19 @@
+{
+  "name": "jsdataframe",
+  "version": "0.1.0",
+  "description": "a data frame library inspired by R and Python Pandas",
+  "main": "jsdataframe.js",
+  "scripts": {
+    "test": "jasmine",
+    "build": "uglifyjs jsdataframe.js -c \"evaluate=false\" -m --source-map jsdataframe-min.map -o jsdataframe-min.js"
+  },
+  "author": "Joshua Ainslie",
+  "license": "MIT",
+  "devDependencies": {
+    "jasmine": "^2.4.1",
+    "uglify-js": "^2.6.1"
+  },
+  "dependencies": {
+    "jsdoc": "^3.4.0"
+  }
+}

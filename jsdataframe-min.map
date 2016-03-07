@@ -1,0 +1,1 @@
+{"version":3,"sources":["jsdataframe.js"],"names":["root","factory","define","amd","exports","nodeName","jsdataframe","this"],"mappings":"CACE,SAAUA,EAAMC,GACM,kBAAXC,SAAyBA,OAAOC,IAEzCD,QAAQ,WAAYD,GAGpBA,EAF4B,gBAAZG,UAAoD,gBAArBA,SAAQC,SAE/CD,QAGCJ,EAAKM,iBAEhBC,KAAM,SAAUH,GAChB","file":"jsdataframe-min.js"}

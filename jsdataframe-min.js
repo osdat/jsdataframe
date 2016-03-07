@@ -1,0 +1,2 @@
+!function(e,t){"function"==typeof define&&define.amd?define(["exports"],t):t("object"==typeof exports&&"string"!=typeof exports.nodeName?exports:e.jsdataframe={})}(this,function(e){"use strict"});
+//# sourceMappingURL=jsdataframe-min.map
