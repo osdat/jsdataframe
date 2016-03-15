@@ -182,6 +182,7 @@ describe('static functions:', function() {
         expect(jd.rep(jd.seq(2), 1).values).toEqual([0, 1]);
         expect(jd.rep(jd.seq(2), 0).values).toEqual([]);
         expect(jd.rep([], 10).values).toEqual([]);
+        expect(jd.rep(null, 2).values).toEqual([null, null]);
       });
 
       it('throws an error if "times" is not a nonnegative integer',
@@ -206,6 +207,7 @@ describe('static functions:', function() {
         expect(jd.repEach(jd.seq(2), 1).values).toEqual([0, 1]);
         expect(jd.repEach(jd.seq(2), 0).values).toEqual([]);
         expect(jd.repEach([], 10).values).toEqual([]);
+        expect(jd.repEach(null, 2).values).toEqual([null, null]);
       });
 
       it('throws an error if "times" is not a nonnegative integer',
@@ -217,6 +219,49 @@ describe('static functions:', function() {
           expect(function() {
             jd.repEach(1, -1);
           }).toThrowError(/nonnegative/);
+        }
+      );
+    });
+
+    describe('jd.repNa', function() {
+      it('behaves as expected when called correctly', function() {
+        expect(jd.repNa(3, 'string').values).toEqual([null, null, null]);
+        expect(jd.repNa(1, 'string').values).toEqual([null]);
+
+        var numVec = jd.repNa(3, 'number');
+        expect(numVec.values).toEqual([NaN, NaN, NaN]);
+        expect(numVec.dtype).toBe('number');
+
+        var boolVec = jd.repNa(3, 'boolean');
+        expect(boolVec.values).toEqual([null, null, null]);
+        expect(boolVec.dtype).toBe('boolean');
+
+        var emptyVec = jd.repNa(0, 'string');
+        expect(emptyVec.values).toEqual([]);
+        expect(emptyVec.dtype).toBe('string');
+      });
+
+      it('throws an error if "times" is not a nonnegative integer',
+        function() {
+          expect(function() {
+            jd.repNa(3.5, 'string');
+          }).toThrowError(/integer/);
+
+          expect(function() {
+            jd.repNa(-1, 'string');
+          }).toThrowError(/nonnegative/);
+        }
+      );
+
+      it('throws an error for invalid dtypes',
+        function() {
+          expect(function() {
+            jd.repNa(3, 'not a dtype');
+          }).toThrowError(/invalid/);
+
+          expect(function() {
+            jd.repNa(3, null);
+          }).toThrowError(/invalid/);
         }
       );
     });

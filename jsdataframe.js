@@ -45,6 +45,13 @@ var dfProto = {};
 * Constants
 */
 
+var VALID_DTYPES = Object.create(null);
+VALID_DTYPES.number = true;
+VALID_DTYPES.boolean = true;
+VALID_DTYPES.string = true;
+VALID_DTYPES.date = true;
+VALID_DTYPES.object = true;
+
 var NA_VALUE = {
   number: NaN,
   boolean: null,
@@ -100,10 +107,8 @@ jd.vector = function(array, dtype, copyArray) {
   // Retrieve appropriate coerceFunc if dtype is defined
   var coerceFunc = null;
   if (dtype !== null) {
+    validateDtype(dtype);
     coerceFunc = COERCE_FUNC[dtype];
-    if (isUndefined(coerceFunc)) {
-      throw new Error('invalid dtype: "' + dtype + '"');
-    }
   }
 
   // Coerce all elements to dtype, inferring dtype along the way if necessary
@@ -172,7 +177,7 @@ jd.seqOut = function(start, step, lengthOut) {
   // Validate arguments
   start = +start;
   step = +step;
-  validateNonnegInt(lengthOut);
+  validateNonnegInt(lengthOut, 'lengthOut');
 
   // Generate sequence
   var array = allocArray(lengthOut);
@@ -190,7 +195,7 @@ jd.linspace = function(start, stop, length) {
   // Validate arguments
   start = +start;
   stop = +stop;
-  validateNonnegInt(length);
+  validateNonnegInt(length, 'length');
 
   // Generate sequence
   var array = allocArray(length);
@@ -204,10 +209,10 @@ jd.linspace = function(start, stop, length) {
 
 
 jd.rep = function(values, times) {
-  validateNonnegInt(times);
+  validateNonnegInt(times, 'times');
 
   // Convert values to vector
-  if (values.type !== 'Vector') {
+  if (isMissing(values) || values.type !== 'Vector') {
     values = Array.isArray(values) ? jd.vector(values) : jd.vector([values]);
   }
 
@@ -227,10 +232,10 @@ jd.rep = function(values, times) {
 
 
 jd.repEach = function(values, times) {
-  validateNonnegInt(times);
+  validateNonnegInt(times, 'times');
 
   // Convert values to vector
-  if (values.type !== 'Vector') {
+  if (isMissing(values) || values.type !== 'Vector') {
     values = Array.isArray(values) ? jd.vector(values) : jd.vector([values]);
   }
 
@@ -246,6 +251,20 @@ jd.repEach = function(values, times) {
   }
 
   return newVector(outputArr, values.dtype);
+};
+
+
+jd.repNa = function(times, dtype) {
+  validateNonnegInt(times, 'times');
+  validateDtype(dtype);
+  var naValue = NA_VALUE[dtype];
+
+  var array = allocArray(times);
+  for (var i = 0; i < times; i++) {
+    array[i] = naValue;
+  }
+
+  return newVector(array, dtype);
 };
 
 
@@ -603,10 +622,8 @@ function allocArray(numElems) {
 
 // Constructs a vector of the correct dtype backed by the given array
 function newVector(array, dtype) {
+  validateDtype(dtype);
   var proto = PROTO_MAP[dtype];
-  if (isUndefined(proto)) {
-    throw new Error('invalid dtype: "' + dtype + '"');
-  }
   var vector = Object.create(proto);
   vector._init(array);
   return vector;
@@ -712,6 +729,12 @@ jd._private_export.reverseComp = reverseComp;
 /*-----------------------------------------------------------------------------
 * Validations
 */
+
+function validateDtype(dtype) {
+  if (!(dtype in VALID_DTYPES)) {
+    throw new Error('invalid dtype: "' + dtype + '"');
+  }
+}
 
 function validateNonnegInt(value, varName) {
   if (!Number.isInteger(value) || value < 0) {
