@@ -629,6 +629,52 @@ function newVector(array, dtype) {
   return vector;
 }
 
+// Applies the given "func" to each pair of elements from the 2 given arrays
+// and yields a new array with the results.  The lengths of the input arrays
+// must either be identical or one of the arrays must have length 1, in which
+// case that single value will be repeated for the length of the other array.
+// The "naValue" argument is optional.  If present, any pair of elements
+// with either value missing will immediately result in "naValue" without
+// evaluating "func".  If "naValue" isn't specified, "func" will be applied
+// to all pairs of elements.
+function combineArrays(array1, array2, naValue, func) {
+  var skipMissing = true;
+  if (isUndefined(func)) {
+    func = naValue;
+    skipMissing = false;
+  }
+
+  var isSingleton1 = false;
+  var isSingleton2 = false;
+  var arr1Len = array1.length;
+  var arr2Len = array2.length;
+  var outputLen = arr1Len;
+  if (arr1Len !== arr2Len) {
+    if (arr1Len === 1) {
+      isSingleton1 = true;
+      outputLen = arr2Len;
+    } else if (arr2Len === 1) {
+      isSingleton2 = true;
+    } else {
+      throw new Error('incompatible array lengths: ' + arr1Len + ' and ' +
+        arr2Len);
+    }
+  }
+
+  var result = allocArray(outputLen);
+  for (var i = 0; i < outputLen; i++) {
+    var val1 = isSingleton1 ? array1[0] : array1[i];
+    var val2 = isSingleton2 ? array2[0] : array2[i];
+    if (skipMissing && (isMissing(val1) || isMissing(val2))) {
+      result[i] = naValue;
+    } else {
+      result[i] = func(val1, val2);
+    }
+  }
+  return result;
+}
+jd._private_export.combineArrays = combineArrays;
+
 
 /*-----------------------------------------------------------------------------
 * Dtype helpers

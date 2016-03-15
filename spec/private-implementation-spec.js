@@ -7,6 +7,63 @@ var jd = jsdataframe;
 describe('private implementation tests:', function() {
   "use strict";
 
+  describe('combineArrays function', function() {
+    var combineArrays = jd._private_export.combineArrays;
+
+    var func = function(val1, val2) { return val1 === val2; };
+    var exampleArray = [1, null, NaN];
+
+    it('behaves as expected for equal length arrays', function() {
+      expect(combineArrays(exampleArray, exampleArray, func))
+        .toEqual([true, true, false]);
+      expect(combineArrays([1], [2], func)).toEqual([false]);
+      expect(combineArrays([], [], func)).toEqual([]);
+    });
+
+    it('automatically skips missing values when "naValue" is specified',
+      function() {
+        expect(combineArrays(exampleArray, exampleArray, null, func))
+          .toEqual([true, null, null]);
+        expect(combineArrays([1, NaN, 3], [1, 2, NaN], undefined, func))
+          .toEqual([true, undefined, undefined]);
+
+        expect(combineArrays([1], [NaN], null, func)).toEqual([null]);
+        expect(combineArrays([NaN], [1], null, func)).toEqual([null]);
+      }
+    );
+
+    it('accommodates length 1 arrays by repeating the single value',
+      function() {
+        expect(combineArrays(exampleArray, [null], func))
+          .toEqual([false, true, false]);
+        expect(combineArrays([null], exampleArray, func))
+          .toEqual([false, true, false]);
+
+        expect(combineArrays(exampleArray, [null], null, func))
+          .toEqual([null, null, null]);
+        expect(combineArrays([null], exampleArray, null, func))
+          .toEqual([null, null, null]);
+
+        expect(combineArrays([], [1], func)).toEqual([]);
+        expect(combineArrays([1], [], func)).toEqual([]);
+      }
+    );
+
+    it('throws an error for incompatible array lengths', function() {
+      expect(function() {
+        combineArrays(exampleArray, [1, 2], func);
+      }).toThrowError(/length/);
+
+      expect(function() {
+        combineArrays(exampleArray, [1, 2, 3, 4], null, func);
+      }).toThrowError(/length/);
+
+      expect(function() {
+        combineArrays([], exampleArray, func);
+      }).toThrowError(/length/);
+    });
+  });
+
   describe('dtype support:', function() {
 
     describe('inferDtype', function() {
