@@ -180,11 +180,7 @@ jd.linspace = function(start, stop, length) {
 
 jd.rep = function(values, times) {
   validateNonnegInt(times, 'times');
-
-  // Convert values to vector
-  if (isMissing(values) || values.type !== 'Vector') {
-    values = Array.isArray(values) ? jd.vector(values) : jd.vector([values]);
-  }
+  values = ensureVector(values);
 
   var inputArr = values.values;
   var inputLength = inputArr.length;
@@ -203,11 +199,7 @@ jd.rep = function(values, times) {
 
 jd.repEach = function(values, times) {
   validateNonnegInt(times, 'times');
-
-  // Convert values to vector
-  if (isMissing(values) || values.type !== 'Vector') {
-    values = Array.isArray(values) ? jd.vector(values) : jd.vector([values]);
-  }
+  values = ensureVector(values);
 
   var inputArr = values.values;
   var inputLength = inputArr.length;
@@ -582,12 +574,14 @@ function isMissing(value) {
   return value === null || isUndefined(value) || Number.isNaN(value);
 }
 
+
 // Allocates a new array for the given number of elements.
 // We define a function in case we want to tune our preallocation
 // strategy later.  (e.g. http://www.html5rocks.com/en/tutorials/speed/v8/)
 function allocArray(numElems) {
   return new Array(numElems);
 }
+
 
 // Constructs a vector of the given dtype backed by the given array
 // without checking or modifying any of the array elements
@@ -599,13 +593,62 @@ function newVector(array, dtype) {
   return vector;
 }
 
-// Applies the given "func" to each pair of elements from the 2 given arrays
+
+// Maps the 'func' on all non-missing elements of array while immediately
+// yielding 'naValue' instead of applying 'func' for any missing elements.
+// The returned result will be a new array of the same length as 'array'.
+function mapNonNa(array, naValue, func) {
+  var len = array.length;
+  var result = allocArray(len);
+  for (var i = 0; i < len; i++) {
+    var value = array[i];
+    result[i] = isMissing(value) ? naValue : func(value);
+  }
+  return result;
+}
+jd._private_export.mapNonNa = mapNonNa;
+
+
+// Performs a left-to-right reduce on 'array' using 'func' starting with
+// 'initValue' while skipping over any missing values.  If there are no
+// non-missing values then the result is simply 'initValue'.
+function reduceNonNa(array, initValue, func) {
+  var result = initValue;
+  for (var i = 0; i < array.length; i++) {
+    var value = array[i];
+    if (!isMissing(value)) {
+      result = func(result, value);
+    }
+  }
+  return result;
+}
+jd._private_export.reduceNonNa = reduceNonNa;
+
+// Performs a left-to-right reduce on 'array' using 'func' starting with
+// 'initValue' unless there's an element for which 'condFunc' returns truthy,
+// in which case this element is immediately returned, halting the rest
+// of the reduction.  For an empty array 'initValue' is immediaately returned.
+function reduceUnless(array, initValue, condFunc, func) {
+  var result = initValue;
+  for (var i = 0; i < array.length; i++) {
+    var value = array[i];
+    if (condFunc(value)) {
+      return value;
+    }
+    result = func(result, value);
+  }
+  return result;
+}
+jd._private_export.reduceUnless = reduceUnless;
+
+
+// Applies the given 'func' to each pair of elements from the 2 given arrays
 // and yields a new array with the results.  The lengths of the input arrays
 // must either be identical or one of the arrays must have length 1, in which
 // case that single value will be repeated for the length of the other array.
-// The "naValue" argument is optional.  If present, any pair of elements
-// with either value missing will immediately result in "naValue" without
-// evaluating "func".  If "naValue" isn't specified, "func" will be applied
+// The 'naValue' argument is optional.  If present, any pair of elements
+// with either value missing will immediately result in 'naValue' without
+// evaluating 'func'.  If 'naValue' isn't specified, 'func' will be applied
 // to all pairs of elements.
 function combineArrays(array1, array2, naValue, func) {
   var skipMissing = true;
@@ -685,6 +728,7 @@ function enforceVectorDtype(array, dtype) {
 // conclusive determines the dtype for the entire vector, and all elements
 // are coerced to this inferred dtype.  The 'defaultDtype' argument
 // determines the resulting dtype only if all values are inconclusive.
+// If 'defaultDtype' is undefined it will default to 'object'.
 function inferVectorDtype(array, defaultDtype) {
   if (isUndefined(defaultDtype)) {
     defaultDtype = 'object';
@@ -712,6 +756,14 @@ function inferVectorDtype(array, defaultDtype) {
   // Use 'defaultDtype' if all inferences were inconclusive
   if (dtype === null) {
     dtype = defaultDtype;
+
+    // Make sure all values are normalized to the right missing value dtype
+    if (dtype !== 'object') {
+      var naValue = NA_VALUE[dtype];
+      for (i = 0; i < array.length; i++) {
+        array[i] = naValue;
+      }
+    }
   }
 
   // Construct vector
@@ -813,6 +865,30 @@ function validateNonnegInt(value, varName) {
     throw new Error('"' + varName + '" must be a nonnegative integer');
   }
 }
+
+function validateVectorIsDtype(vector, dtype) {
+  if (vector.dtype !== dtype) {
+    throw new Error('expected vector dtype to be ' + dtype + ' but got ' +
+      vector.dtype);
+  }
+}
+
+// Returns a vector representing the given values, which can be either
+// a vector, array, or scalar.
+// If already a vector, this vector is simply returned.
+// If an array, it's converted to a vector with inferred dtype.
+// If a scalar, it's wrapped in an array and converted to a vector also.
+// The defaultDtype is used only if all values are missing.  It defaults
+// to 'object' if undefined.
+function ensureVector(values, defaultDtype) {
+  if (isMissing(values) || values.type !== 'Vector') {
+    values = Array.isArray(values) ?
+      inferVectorDtype(values.slice(), defaultDtype) :
+      inferVectorDtype([values], defaultDtype);
+  }
+  return values;
+}
+jd._private_export.ensureVector = ensureVector;
 
 
 /*-----------------------------------------------------------------------------

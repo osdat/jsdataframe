@@ -7,7 +7,51 @@ var jd = jsdataframe;
 describe('private implementation tests:', function() {
   "use strict";
 
-  describe('combineArrays function', function() {
+  describe('mapNonNa', function() {
+    var mapNonNa = jd._private_export.mapNonNa;
+
+    it('behaves as expected', function() {
+      var func = function(x) { return x === 1; };
+      expect(mapNonNa([NaN, 0, NaN, 1], null, func)).toEqual(
+        [null, false, null, true]
+      );
+      expect(mapNonNa([], null, func)).toEqual([]);
+    });
+  });
+
+  describe('reduceNonNa', function() {
+    var reduceNonNa = jd._private_export.reduceNonNa;
+    var add = function(acc, val) { return acc + val; };
+
+    it('skips missing values', function() {
+      expect(reduceNonNa([1, 2, 3], 0, add)).toBe(6);
+      expect(reduceNonNa([NaN, 1, 2, NaN, 3, NaN], 0, add)).toBe(6);
+    });
+
+    it('returns "initValue" when there are no non-missing values', function() {
+      expect(reduceNonNa([], 42, add)).toBe(42);
+      expect(reduceNonNa([NaN, NaN], 42, add)).toBe(42);
+    });
+  });
+
+  describe('reduceUnless', function() {
+    var reduceUnless = jd._private_export.reduceUnless;
+    var add = function(acc, val) { return acc + val; };
+    var condFunc = function(x) { return x === 42; };
+
+    it('immediately returns any value meeting "condFunc"', function() {
+      expect(reduceUnless([1, 2, 3], 0, condFunc, add)).toBe(6);
+      expect(reduceUnless([42, 1, 2, 3], 0, condFunc, add)).toBe(42);
+      expect(reduceUnless([1, 2, 42, 3], 0, condFunc, add)).toBe(42);
+      expect(reduceUnless([1, 2, 3, 42], 0, condFunc, add)).toBe(42);
+    });
+
+    it('returns "initValue" when there are no non-missing values', function() {
+      expect(reduceUnless([], -1, condFunc, add)).toBe(-1);
+    });
+  });
+
+  describe('combineArrays', function() {
     var combineArrays = jd._private_export.combineArrays;
 
     var func = function(val1, val2) { return val1 === val2; };
@@ -109,6 +153,16 @@ describe('private implementation tests:', function() {
           expect(inferVectorDtype([null], 'date').dtype).toBe('date');
           expect(inferVectorDtype([], 'date').dtype).toBe('date');
           expect(inferVectorDtype([null]).dtype).toBe('object');
+        }
+      );
+
+      it('treats NaN and null missing values appropriate for "defaultDtype"',
+        function() {
+          expect(inferVectorDtype([NaN], 'date').dtype).toBe('number');
+
+          var vector = inferVectorDtype([null], 'number');
+          expect(vector.dtype).toBe('number');
+          expect(vector.values).toEqual([NaN]);
         }
       );
     });
@@ -252,6 +306,50 @@ describe('private implementation tests:', function() {
       expect(compare(later, earlier)).toBe(1);
       expect(compare(earlier, earlier2)).toBe(0);
       expect(compare(null, earlier)).toBe(-1);
+    });
+  });
+
+  describe('ensureVector', function() {
+    var ensureVector = jd._private_export.ensureVector;
+
+    it('returns "values" if it\'s a vector', function() {
+      var vector = jd.seq(5);
+      expect(ensureVector(vector)).toBe(vector);
+    });
+
+    it('converts array values into a vector', function() {
+      var vector = ensureVector([0, 1, 2]);
+      expect(vector.type).toBe('Vector');
+      expect(vector.dtype).toBe('number');
+      expect(vector.values).toEqual([0, 1, 2]);
+    });
+
+    it('converts a scalar value as a vector', function() {
+      var vector = ensureVector(1);
+      expect(vector.type).toBe('Vector');
+      expect(vector.dtype).toBe('number');
+      expect(vector.values).toEqual([1]);
+    });
+
+    it('infers the dtype correctly using defaultDtype if needed', function() {
+      var vector = ensureVector(null);
+      expect(vector.type).toBe('Vector');
+      expect(vector.dtype).toBe('object');
+      expect(vector.values).toEqual([null]);
+
+      var vector2 = ensureVector([null], 'number');
+      expect(vector2.type).toBe('Vector');
+      expect(vector2.dtype).toBe('number');
+      expect(vector2.values).toEqual([NaN]);
+    });
+
+    it('makes a copy of "values" if it\'s an array', function() {
+      var array = [0, 1, 2];
+      var vector = ensureVector(array);
+      vector.values[0] = -10;
+
+      expect(vector.values).toEqual([-10, 1, 2]);
+      expect(array).toEqual([0, 1, 2]);
     });
   });
 

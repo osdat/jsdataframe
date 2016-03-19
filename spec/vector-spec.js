@@ -55,6 +55,14 @@ describe('vector methods:', function() {
           jd.seq(3).toDtype('invalid');
         }).toThrowError(/dtype/);
       });
+
+      it('normalizes the missing value type for dtypes that aren\'t "object"',
+        function() {
+          var objVec = jd.vector([undefined, null]);
+          expect(objVec.values).toEqual([undefined, null]);
+          expect(objVec.toDtype('boolean').values).toEqual([null, null]);
+        }
+      );
     });
   });
 
