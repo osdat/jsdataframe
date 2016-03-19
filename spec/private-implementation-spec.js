@@ -93,6 +93,26 @@ describe('private implementation tests:', function() {
       });
     });
 
+    describe('inferVectorDtype', function() {
+      var inferVectorDtype = jd._private_export.inferVectorDtype;
+
+      it('uses the inferred dtype of the first conclusive array element',
+        function() {
+          var vector = inferVectorDtype([null, NaN, '1'], 'date');
+          expect(vector.dtype).toEqual('number');
+          expect(vector.values).toEqual([NaN, NaN, 1]);
+        }
+      );
+
+      it('falls back to "defaultDtype" if all elements are inconclusive',
+        function() {
+          expect(inferVectorDtype([null], 'date').dtype).toBe('date');
+          expect(inferVectorDtype([], 'date').dtype).toBe('date');
+          expect(inferVectorDtype([null]).dtype).toBe('object');
+        }
+      );
+    });
+
     describe('coerceToNum', function() {
       var coerceToNum = jd._private_export.coerceToNum;
 

@@ -96,45 +96,15 @@ jd.vector = function(array, dtype, copyArray) {
   if (!Array.isArray(array)) {
     throw new Error('"array" argument must be an Array');
   }
-
   if (isUndefined(copyArray) || copyArray) {
     array = array.slice();
   }
   if (isUndefined(dtype)) {
     dtype = null;
   }
-
-  // Retrieve appropriate coerceFunc if dtype is defined
-  var coerceFunc = null;
-  if (dtype !== null) {
-    validateDtype(dtype);
-    coerceFunc = COERCE_FUNC[dtype];
-  }
-
-  // Coerce all elements to dtype, inferring dtype along the way if necessary
-  for (var i = 0; i < array.length; i++) {
-    if (coerceFunc === null) {
-      var inferredDtype = inferDtype(array[i]);
-      if (inferredDtype !== null) {
-        dtype = inferredDtype;
-        coerceFunc = COERCE_FUNC[dtype];
-        // Apply inferred dtype to all previous elements
-        for (var j = 0; j <= i; j++) {
-          array[j] = coerceFunc(array[j]);
-        }
-      }
-    } else {
-      array[i] = coerceFunc(array[i]);
-    }
-  }
-
-  // Declare dtype as "object" if all inferences were inconclusive
-  if (dtype === null) {
-    dtype = 'object';
-  }
-
-  // Construct vector
-  return newVector(array, dtype);
+  return (dtype === null) ?
+    inferVectorDtype(array) :
+    enforceVectorDtype(array, dtype);
 };
 
 
@@ -313,7 +283,6 @@ vectorProto.toDtype = function(dtype) {
   if (this.dtype === dtype) {
     return this;
   }
-
   return jd.vector(this.values, dtype);
 };
 
@@ -620,7 +589,8 @@ function allocArray(numElems) {
   return new Array(numElems);
 }
 
-// Constructs a vector of the correct dtype backed by the given array
+// Constructs a vector of the given dtype backed by the given array
+// without checking or modifying any of the array elements
 function newVector(array, dtype) {
   validateDtype(dtype);
   var proto = PROTO_MAP[dtype];
@@ -692,6 +662,62 @@ function inferDtype(value) {
   );
 }
 jd._private_export.inferDtype = inferDtype;
+
+
+// Creates a new vector backed by the given array after coercing each
+// element to the given dtype.
+function enforceVectorDtype(array, dtype) {
+  validateDtype(dtype);
+  var coerceFunc = COERCE_FUNC[dtype];
+
+  // Coerce all elements to dtype
+  for (var i = 0; i < array.length; i++) {
+    array[i] = coerceFunc(array[i]);
+  }
+
+  // Construct vector
+  return newVector(array, dtype);
+}
+
+
+// Creates a new vector backed by the given array by inferring the dtype
+// based on the array's values.  The first value for which 'inferDtype' is
+// conclusive determines the dtype for the entire vector, and all elements
+// are coerced to this inferred dtype.  The 'defaultDtype' argument
+// determines the resulting dtype only if all values are inconclusive.
+function inferVectorDtype(array, defaultDtype) {
+  if (isUndefined(defaultDtype)) {
+    defaultDtype = 'object';
+  }
+  var dtype = null;
+  var coerceFunc = null;
+
+  // Coerce all elements to dtype upon inferring it
+  for (var i = 0; i < array.length; i++) {
+    if (coerceFunc === null) {
+      var inferredDtype = inferDtype(array[i]);
+      if (inferredDtype !== null) {
+        dtype = inferredDtype;
+        coerceFunc = COERCE_FUNC[dtype];
+        // Apply inferred dtype to all previous elements
+        for (var j = 0; j <= i; j++) {
+          array[j] = coerceFunc(array[j]);
+        }
+      }
+    } else {
+      array[i] = coerceFunc(array[i]);
+    }
+  }
+
+  // Use 'defaultDtype' if all inferences were inconclusive
+  if (dtype === null) {
+    dtype = defaultDtype;
+  }
+
+  // Construct vector
+  return newVector(array, dtype);
+}
+jd._private_export.inferVectorDtype = inferVectorDtype;
 
 
 function coerceToNum(value) {
