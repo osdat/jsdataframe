@@ -271,12 +271,14 @@ vectorProto.toArray = function() {
   return this.values.slice();
 };
 
+
 vectorProto.toDtype = function(dtype) {
   if (this.dtype === dtype) {
     return this;
   }
   return jd.vector(this.values, dtype);
 };
+
 
 vectorProto.serialize = function() {
   // TODO
@@ -511,6 +513,107 @@ numVecProto.dtype = 'number';
 */
 
 boolVecProto.dtype = 'boolean';
+
+
+boolVecProto.and = function(other) {
+  other = ensureVector(other, 'boolean');
+  validateVectorIsDtype(other, 'boolean');
+  var array = combineArrays(this.values, other.values, boolAnd);
+  return newVector(array, 'boolean');
+};
+function boolAnd(x, y) {
+  return (
+    x === false || y === false ? false :
+    x === null || y === null ? null :
+    true
+  );
+}
+
+
+boolVecProto.or = function(other) {
+  other = ensureVector(other, 'boolean');
+  validateVectorIsDtype(other, 'boolean');
+  var array = combineArrays(this.values, other.values, boolOr);
+  return newVector(array, 'boolean');
+};
+function boolOr(x, y) {
+  return (
+    x === true || y === true ? true :
+    x === null || y === null ? null :
+    false
+  );
+}
+
+
+boolVecProto.not = function() {
+  var array = mapNonNa(this.values, null, boolNot);
+  return newVector(array, 'boolean');
+};
+function boolNot(x) {
+  return !x;
+}
+
+
+boolVecProto.xor = function(other) {
+  other = ensureVector(other, 'boolean');
+  validateVectorIsDtype(other, 'boolean');
+  var array = combineArrays(this.values, other.values, boolXor);
+  return newVector(array, 'boolean');
+};
+function boolXor(x, y) {
+  return (
+    x === null || y === null ? null :
+    x !== y
+  );
+}
+
+
+boolVecProto.all = function(skipNa) {
+  if (isUndefined(skipNa)) {
+    skipNa = false;
+  }
+  return skipNa ?
+    reduceNonNa(this.values, true, boolAnd) :
+    this.values.reduce(boolAnd, true);
+};
+
+
+boolVecProto.any = function(skipNa) {
+  if (isUndefined(skipNa)) {
+    skipNa = false;
+  }
+  return skipNa ?
+    reduceNonNa(this.values, false, boolOr) :
+    this.values.reduce(boolOr, false);
+};
+
+
+boolVecProto.sum = function(skipNa) {
+  if (isUndefined(skipNa)) {
+    skipNa = true;
+  }
+  if (skipNa) {
+    return reduceNonNa(this.values, 0, boolSum);
+  } else {
+    var result = reduceUnless(this.values, 0, isMissing, boolSum);
+    return result === null ? NaN : result;
+  }
+};
+function boolSum(x, y) {
+  return (+x) + (+y);
+}
+
+
+boolVecProto.which = function() {
+  var array = [];
+  for (var i = 0; i < this.values.length; i++) {
+    var value = this.values[i];
+    if (value === true) {
+      array.push(i);
+    }
+  }
+  return newVector(array, 'number');
+};
 
 
 /*=============================================================================
