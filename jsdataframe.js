@@ -290,15 +290,29 @@ vectorProto.serialize = function() {
 */
 
 vectorProto.isNa = function() {
-  // TODO
+  return newVector(this.values.map(isMissing), 'boolean');
 };
+
 
 vectorProto.dropNa = function() {
-  // TODO
+  return this.filter(isNotMissing);
 };
+function isNotMissing(value) {
+  return !isMissing(value);
+}
 
-vectorProto.fillNa = function() {
-  // TODO
+
+vectorProto.replaceNa = function(value) {
+  var coerceFunc = COERCE_FUNC[this.dtype];
+  value = coerceFunc(value);
+
+  var array = this.values.slice();
+  for (var i = 0; i < array.length; i++) {
+    if (isMissing(array[i])) {
+      array[i] = value;
+    }
+  }
+  return newVector(array, this.dtype);
 };
 
 
@@ -336,35 +350,51 @@ vectorProto.ifElse = function() {
 */
 
 vectorProto.map = function() {
-  // TODO
+  var array = Array.prototype.map.apply(this.values, arguments);
+  return inferVectorDtype(array, this.dtype);
 };
+
 
 vectorProto.reduce = function() {
-  // TODO
+  return Array.prototype.reduce.apply(this.values, arguments);
 };
+
 
 vectorProto.reduceRight = function() {
-  // TODO
+  return Array.prototype.reduceRight.apply(this.values, arguments);
 };
 
+
 vectorProto.findIndex = function() {
-  // TODO
+  return Array.prototype.findIndex.apply(this.values, arguments);
 };
+
 
 vectorProto.concat = function() {
   // TODO
 };
 
-vectorProto.sort = function() {
-  // TODO
+
+vectorProto.sort = function(compareFunction) {
+  if (isUndefined(compareFunction)) {
+    compareFunction = compare;
+  }
+  var array = this.values.slice();
+  Array.prototype.sort.call(array, compareFunction);
+  return newVector(array, this.dtype);
 };
+
 
 vectorProto.reverse = function() {
-  // TODO
+  var array = this.values.slice();
+  Array.prototype.reverse.call(array);
+  return newVector(array, this.dtype);
 };
 
+
 vectorProto.filter = function() {
-  // TODO
+  var array = Array.prototype.filter.apply(this.values, arguments);
+  return newVector(array, this.dtype);
 };
 
 
@@ -1043,6 +1073,30 @@ Number.isInteger = Number.isInteger || function(value) {
     isFinite(value) &&
     Math.floor(value) === value;
 };
+
+// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/findIndex
+if (!Array.prototype.findIndex) {
+  Array.prototype.findIndex = function(predicate) {
+    if (this === null) {
+      throw new TypeError('Array.prototype.findIndex called on null or undefined');
+    }
+    if (typeof predicate !== 'function') {
+      throw new TypeError('predicate must be a function');
+    }
+    var list = Object(this);
+    var length = list.length >>> 0;
+    var thisArg = arguments[1];
+    var value;
+
+    for (var i = 0; i < length; i++) {
+      value = list[i];
+      if (predicate.call(thisArg, value, i, list)) {
+        return i;
+      }
+    }
+    return -1;
+  };
+}
 
 
 }));

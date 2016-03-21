@@ -66,6 +66,155 @@ describe('vector methods:', function() {
     });
   });
 
+  describe('missing values:', function() {
+    var exampleVector = jd.vector([NaN, 1, NaN, 2, 3, NaN]);
+
+    describe('isNa', function() {
+      it('behaves as expected', function() {
+        var vector = exampleVector.isNa();
+        expect(vector.dtype).toBe('boolean');
+        expect(vector.values).toEqual([true, false, true, false, false, true]);
+
+        var vector2 = jd.vector([]).isNa();
+        expect(vector2.dtype).toBe('boolean');
+        expect(vector2.values).toEqual([]);
+      });
+    });
+
+    describe('dropNa', function() {
+      it('remove missing values', function() {
+        var vector = exampleVector.dropNa();
+        expect(vector.dtype).toBe('number');
+        expect(vector.values).toEqual([1, 2, 3]);
+
+      });
+
+      it('does not alter vectors with no missing values', function() {
+        var vector = jd.seq(3).dropNa(-10);
+        expect(vector.values).toEqual(jd.seq(3).values);
+
+        var vector2 = jd.vector([], 'date').dropNa();
+        expect(vector2.dtype).toBe('date');
+        expect(vector2.values).toEqual([]);
+      });
+    });
+
+    describe('replaceNa', function() {
+      it('replaces missing values with "value"', function() {
+        var vector = exampleVector.replaceNa(-10);
+        expect(vector.dtype).toBe('number');
+        expect(vector.values).toEqual([-10, 1, -10, 2, 3, -10]);
+      });
+
+      it('does not alter vectors with no missing values', function() {
+        var vector = jd.seq(3).replaceNa(-10);
+        expect(vector.values).toEqual(jd.seq(3).values);
+
+        expect(jd.vector([]).replaceNa(-10).values).toEqual([]);
+      });
+
+      it('coerces "value" to the vector\'s dtype', function() {
+        expect(exampleVector.replaceNa(null).values).toEqual(
+          [NaN, 1, NaN, 2, 3, NaN]
+        );
+        expect(exampleVector.replaceNa('10').values).toEqual(
+          [10, 1, 10, 2, 3, 10]
+        );
+      });
+    });
+  });
+
+  describe('Array.prototype adaptations:', function() {
+    var add = function(x, y) { return x + y; };
+    var exampleNumVec = jd.vector([3, 0, 1, 20, 1]);
+
+    describe('map', function() {
+
+      it('behaves as expected for the typical case', function() {
+        var vector = jd.seq(3).map(function(x) { return x.toString(); });
+        expect(vector.dtype).toBe('string');
+        expect(vector.values).toEqual(['0', '1', '2']);
+      });
+
+      it('defaults to using this vector\'s dtype when inference is ' +
+        'inconslusive',
+        function() {
+          var vector = jd.vector(['0', '1']).map(function (x) { return null; });
+          expect(vector.dtype).toBe('string');
+          expect(vector.values).toEqual([null, null]);
+        }
+      );
+    });
+
+    describe('reduce', function() {
+
+      it('behaves as expected', function() {
+        expect(jd.seq(5).reduce(add, 10)).toBe(20);
+      });
+    });
+
+    describe('reduceRight', function() {
+
+      it('behaves as expected', function() {
+        expect(jd.seq(5).reduceRight(add, 10)).toBe(20);
+      });
+    });
+
+    describe('findIndex', function() {
+
+      it('behaves as expected', function() {
+        expect(exampleNumVec.findIndex(function(x) { return x === 1; }))
+          .toBe(2);
+
+        expect(exampleNumVec.findIndex(function(x) { return x === -10; }))
+          .toBe(-1);
+      });
+    });
+
+    describe('sort', function() {
+
+      it('behaves as expected without modifying the original vector',
+        function() {
+          var vector = exampleNumVec.sort();
+          expect(vector.dtype).toBe('number');
+          expect(vector.values).toEqual([0, 1, 1, 3, 20]);
+          expect(exampleNumVec.values).toEqual([3, 0, 1, 20, 1]);
+        }
+      );
+    });
+
+    describe('reverse', function() {
+
+      it('behaves as expected without modifying the original vector',
+        function() {
+          var vector = exampleNumVec.reverse();
+          expect(vector.dtype).toBe('number');
+          expect(vector.values).toEqual([1, 20, 1, 0, 3]);
+          expect(exampleNumVec.values).toEqual([3, 0, 1, 20, 1]);
+        }
+      );
+    });
+
+    describe('filter', function() {
+      var exampleVector = jd.vector([null, true, false, null, true]);
+
+      it('has arguments like Array.prototype.filter', function() {
+        var callback = function(elem, index, array) {
+          return index >= array.length - this.offset;
+        };
+        var vector = jd.seq(10).filter(callback, {offset: 3});
+        expect(vector.dtype).toBe('number');
+        expect(vector.values).toEqual([7, 8, 9]);
+      });
+
+      it('returns a vector with the same dtype as this vector', function() {
+        var vector = exampleVector.filter(function(x) { return x === null; });
+        expect(vector.dtype).toBe('boolean');
+        expect(vector.values).toEqual([null, null]);
+      });
+    });
+  });
+
   describe('comparison:', function() {
     // TODO
   });
