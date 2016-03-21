@@ -216,7 +216,209 @@ describe('vector methods:', function() {
   });
 
   describe('comparison:', function() {
-    // TODO
+    var numberVector = jd.vector([NaN, 0, 1, 2]);
+    var dateVector = numberVector.toDtype('date');
+    var date = new Date(1);
+
+    describe('all element-wise comparison operators', function() {
+      var operators = ['eq', 'neq', 'lt', 'gt', 'lte', 'gte'];
+
+      it('return a boolean vector of the right length', function() {
+        operators.forEach(function(op) {
+          var vector = numberVector[op](null);
+          expect(vector.dtype).toBe('boolean');
+          expect(vector.size()).toBe(4);
+        });
+      });
+
+      it('propagate missing values from either side of the comparison',
+        function() {
+          var numVec1 = jd.vector([NaN, NaN, 1, 2]);
+          var numVec2 = jd.vector([NaN, 0, NaN, 2]);
+          var dateVec1 = numVec1.toDtype('date');
+          var dateVec2 = numVec2.toDtype('date');
+
+          operators.forEach(function(op) {
+            var numVecResult = numVec1[op](numVec2);
+            expect(numVecResult.dtype).toBe('boolean');
+            expect(numVecResult.isNa().values).toEqual(
+              [true, true, true, false]
+            );
+
+            var dateVecResult = dateVec1[op](dateVec2);
+            expect(dateVecResult.dtype).toBe('boolean');
+            expect(dateVecResult.isNa().values).toEqual(
+              [true, true, true, false]
+            );
+          });
+        }
+      );
+
+      it('return a vector full of missing values if the dtypes differ',
+        function() {
+          operators.forEach(function(op) {
+            var vector = numberVector[op](dateVector);
+            expect(vector.dtype).toBe('boolean');
+            expect(vector.isNa().values).toEqual(
+              [true, true, true, true]
+            );
+          });
+        }
+      );
+    });
+
+    describe('eq', function() {
+      it('checks element-wise equality', function() {
+        expect(numberVector.eq(numberVector).values).toEqual(
+          [null, true, true, true]
+        );
+        expect(numberVector.eq(numberVector.values).values).toEqual(
+          [null, true, true, true]
+        );
+        expect(dateVector.eq(dateVector).values).toEqual(
+          [null, true, true, true]
+        );
+        expect(dateVector.eq(dateVector.values).values).toEqual(
+          [null, true, true, true]
+        );
+      });
+
+      it('compares "object" vectors via shallow equality', function() {
+        var obj = {};
+        var vector1 = jd.vector([obj, obj, NaN, null]);
+        var vector2 = jd.vector([obj, {}, 1, 2]);
+
+        expect(vector1.eq(vector2).values).toEqual(
+          [true, false, null, null]
+        );
+        expect(vector2.eq(vector1).values).toEqual(
+          [true, false, null, null]
+        );
+      });
+    });
+
+    describe('neq', function() {
+      it('checks element-wise non-equality', function() {
+        expect(numberVector.neq(numberVector).values).toEqual(
+          [null, false, false, false]
+        );
+        expect(numberVector.neq(numberVector.values).values).toEqual(
+          [null, false, false, false]
+        );
+        expect(dateVector.neq(dateVector).values).toEqual(
+          [null, false, false, false]
+        );
+        expect(dateVector.neq(dateVector.values).values).toEqual(
+          [null, false, false, false]
+        );
+      });
+    });
+
+    describe('lt', function() {
+      it('checks element-wise less than', function() {
+        expect(numberVector.lt(1).values).toEqual(
+          [null, true, false, false]
+        );
+        expect(numberVector.lt([1]).values).toEqual(
+          [null, true, false, false]
+        );
+        expect(dateVector.lt(date).values).toEqual(
+          [null, true, false, false]
+        );
+        expect(dateVector.lt([date]).values).toEqual(
+          [null, true, false, false]
+        );
+      });
+    });
+
+    describe('gt', function() {
+      it('checks element-wise greater than', function() {
+        expect(numberVector.gt(1).values).toEqual(
+          [null, false, false, true]
+        );
+        expect(dateVector.gt(date).values).toEqual(
+          [null, false, false, true]
+        );
+      });
+    });
+
+    describe('lte', function() {
+      it('checks element-wise less than or equal to', function() {
+        expect(numberVector.lte(1).values).toEqual(
+          [null, true, true, false]
+        );
+        expect(dateVector.lte(date).values).toEqual(
+          [null, true, true, false]
+        );
+      });
+    });
+
+    describe('gte', function() {
+      it('checks element-wise greater than or equal to', function() {
+        expect(numberVector.gte(1).values).toEqual(
+          [null, false, true, true]
+        );
+        expect(dateVector.gte(date).values).toEqual(
+          [null, false, true, true]
+        );
+      });
+    });
+
+    describe('equals', function() {
+      it('returns false if "other" is not a vector or if the vectors have ' +
+        'different lengths or dtypes',
+        function() {
+          expect(numberVector.equals(1)).toBe(false);
+          expect(numberVector.equals(numberVector.values)).toBe(false);
+          expect(numberVector.equals(jd.vector([NaN, 0, 1, 2, 3]))).toBe(false);
+          expect(numberVector.equals(date)).toBe(false);
+        }
+      );
+
+      it('returns true for vectors with identical elements', function() {
+        expect(numberVector.equals(numberVector)).toBe(true);
+        expect(numberVector.equals(jd.vector(numberVector.values))).toBe(true);
+        expect(dateVector.equals(dateVector)).toBe(true);
+        expect(dateVector.equals(jd.vector(dateVector.values))).toBe(true);
+        expect(jd.vector(['a', 'b']).equals(jd.vector(['a', 'b']))).toBe(true);
+        expect(jd.vector([]).equals(jd.vector([]))).toBe(true);
+      });
+
+      it('returns true for slightly different number vectors within the ' +
+        'right tolerance',
+        function() {
+          var numVec2 = jd.vector([NaN, 1e-7, 1 - 1e-10, 2]);
+          var numVecCopy = jd.vector(numberVector.values);
+          expect(numberVector.equals(numVec2)).toBe(true);
+          expect(numberVector.equals(numVec2, 0)).toBe(false);
+          expect(numberVector.equals(numVecCopy, 0)).toBe(true);
+
+          expect(jd.vector([NaN]).equals(jd.vector([1]))).toBe(false);
+          expect(jd.vector([1]).equals(jd.vector([NaN]))).toBe(false);
+        }
+      );
+
+      it('performs shallow equality with === for "object" dtype, but NaN ' +
+        'elements compare equal to each other',
+        function() {
+          var obj = {};
+          var vector1 = jd.vector([1, '2', obj, NaN, null], 'object');
+          var vector1Copy = jd.vector([1, '2', obj, NaN, null], 'object');
+          var vector2 = jd.vector([1, '2', {}, NaN, null], 'object');
+
+          expect(vector1.values).toEqual([1, '2', obj, NaN, null]);
+          expect(vector1.equals(vector1Copy)).toBe(true);
+          expect(vector1.equals(vector2)).toBe(false);
+
+          // Shallow equality of "object" vectors gives conflicting results
+          // from "date" vectors
+          expect(jd.vector([new Date(0)]).equals(jd.vector([new Date(0)])))
+            .toBe(true);
+          expect(jd.vector([new Date(0)], 'object').equals(
+            jd.vector([new Date(0)], 'object'))).toBe(false);
+        }
+      );
+    });
   });
 
 });

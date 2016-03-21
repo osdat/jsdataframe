@@ -402,37 +402,109 @@ vectorProto.filter = function() {
 * Comparison
 */
 
-vectorProto.eq = function() {
+vectorProto.eq = function(other) {
+  other = ensureVector(other, this.dtype);
+  var outputLen = validateArrayLengths(this.size(), other.size());
+  if (this.dtype !== other.dtype) {
+    return jd.repNa(outputLen, 'boolean');
+  }
+  var array = (this.dtype === 'object') ?
+    combineArrays(this.values, other.values, null, elemObjEq) :
+    combineArrays(this.values, other.values, null, elemEq);
+  return newVector(array, 'boolean');
+};
+function elemEq(x, y) {
+  return compare(x, y) === 0;
+}
+// Returns true if x === y or if x and y are both NaN.  This is meant
+// for shallow equals over elements with "object" dtype only.
+function elemObjEq(x, y) {
+  return (Number.isNaN(x) && Number.isNaN(y)) || x === y;
+}
+
+
+vectorProto.neq = function(other) {
+  return this.eq(other).not();
+};
+
+
+vectorProto.lt = function(other) {
+  other = ensureVector(other, this.dtype);
+  var outputLen = validateArrayLengths(this.size(), other.size());
+  if (this.dtype !== other.dtype) {
+    return jd.repNa(outputLen, 'boolean');
+  }
+  var array = combineArrays(this.values, other.values, null, elemLt);
+  return newVector(array, 'boolean');
+};
+function elemLt(x, y) {
+  return compare(x, y) < 0;
+}
+
+
+vectorProto.gt = function(other) {
+  other = ensureVector(other, this.dtype);
+  var outputLen = validateArrayLengths(this.size(), other.size());
+  if (this.dtype !== other.dtype) {
+    return jd.repNa(outputLen, 'boolean');
+  }
+  var array = combineArrays(this.values, other.values, null, elemGt);
+  return newVector(array, 'boolean');
+};
+function elemGt(x, y) {
+  return compare(x, y) > 0;
+}
+
+
+vectorProto.lte = function(other) {
+  return this.lt(other).or(this.eq(other));
+};
+
+
+vectorProto.gte = function(other) {
+  return this.gt(other).or(this.eq(other));
+};
+
+
+vectorProto.between = function(lower, upper, inclusive) {
   // TODO
 };
 
-vectorProto.neq = function() {
-  // TODO
-};
 
-vectorProto.lt = function() {
-  // TODO
-};
+vectorProto.equals = function(other, tolerance) {
+  if (isMissing(other) || other.type !== 'Vector' ||
+    this.size() !== other.size() || this.dtype !== other.dtype) {
+    return false;
+  }
+  if (this === other) {
+    return true;
+  }
 
-vectorProto.gt = function() {
-  // TODO
-};
+  var eqFunc = elemEq;
+  if (this.dtype === 'number') {
+    eqFunc = isUndefined(tolerance) ? numClose :
+      function(x, y) {
+        return (Number.isNaN(x) && Number.isNaN(y)) ||
+          Math.abs(x - y) <= tolerance;
+      };
+  } else if (this.dtype === 'object'){
+    eqFunc = elemObjEq;
+  }
 
-vectorProto.lte = function() {
-  // TODO
+  var array1 = this.values;
+  var array2 = other.values;
+  for (var i = 0; i < array1.length; i++) {
+    if (!eqFunc(array1[i], array2[i])) {
+      return false;
+    }
+  }
+  return true;
 };
-
-vectorProto.gte = function() {
-  // TODO
-};
-
-vectorProto.between = function() {
-  // TODO
-};
-
-vectorProto.equals = function() {
-  // TODO
-};
+// Returns true if x and y are within 1e-7 tolerance or are both NaN
+function numClose(x, y) {
+  return (Number.isNaN(x) && Number.isNaN(y)) ||
+    Math.abs(x - y) <= 1e-7;
+}
 
 
 /*-----------------------------------------------------------------------------
@@ -790,22 +862,11 @@ function combineArrays(array1, array2, naValue, func) {
     skipMissing = false;
   }
 
-  var isSingleton1 = false;
-  var isSingleton2 = false;
   var arr1Len = array1.length;
   var arr2Len = array2.length;
-  var outputLen = arr1Len;
-  if (arr1Len !== arr2Len) {
-    if (arr1Len === 1) {
-      isSingleton1 = true;
-      outputLen = arr2Len;
-    } else if (arr2Len === 1) {
-      isSingleton2 = true;
-    } else {
-      throw new Error('incompatible array lengths: ' + arr1Len + ' and ' +
-        arr2Len);
-    }
-  }
+  var outputLen = validateArrayLengths(arr1Len, arr2Len);
+  var isSingleton1 = (arr1Len === 1);
+  var isSingleton2 = (arr2Len === 1);
 
   var result = allocArray(outputLen);
   for (var i = 0; i < outputLen; i++) {
@@ -957,6 +1018,11 @@ var MISSING_ORDER = {
 // Comparison function for Array.prototype.sort().
 // This sorts number, boolean, string, or Date values via their
 // natural ascending order, with any missing values showing up first.
+// The intention is to impose a natural total ordering of
+// all elements within a particular non-object dtype, including the dtype's
+// missing value.  The result of compare(a, b) should be 0 if and only if
+// a and b have equal values (e.g. deep equality for Dates).
+// All bets are off comparing elements across different dtypes though.
 function compare(a, b) {
   var aMissing = isMissing(a);
   var bMissing = isMissing(b);
@@ -987,23 +1053,41 @@ jd._private_export.reverseComp = reverseComp;
 * Validations
 */
 
+// Returns undefined or throws an error if invalid
 function validateDtype(dtype) {
   if (!(dtype in VALID_DTYPES)) {
     throw new Error('invalid dtype: "' + dtype + '"');
   }
 }
 
+// Returns undefined or throws an error if invalid
 function validateNonnegInt(value, varName) {
   if (!Number.isInteger(value) || value < 0) {
     throw new Error('"' + varName + '" must be a nonnegative integer');
   }
 }
 
+// Returns undefined or throws an error if invalid
 function validateVectorIsDtype(vector, dtype) {
   if (vector.dtype !== dtype) {
     throw new Error('expected vector dtype to be ' + dtype + ' but got ' +
       vector.dtype);
   }
+}
+
+// Returns the compatible output vector length for element-wise operation
+// on vectors of length 'len1' and 'len2' or throws an error if incompatible
+function validateArrayLengths(len1, len2) {
+  var outputLen = len1;
+  if (len1 !== len2) {
+    if (len1 === 1) {
+      outputLen = len2;
+    } else if (len2 !== 1) {
+      throw new Error('incompatible array lengths: ' + len1 + ' and ' +
+        len2);
+    }
+  }
+  return outputLen;
 }
 
 // Returns a vector representing the given values, which can be either
