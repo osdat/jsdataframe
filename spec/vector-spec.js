@@ -421,4 +421,211 @@ describe('vector methods:', function() {
     });
   });
 
+  describe('order-based methods:', function() {
+    var numVec1 = jd.vector([1, 0, 2, NaN, 0, 2]);
+    var dateVec1 = numVec1.toDtype('date');
+
+    describe('min', function() {
+      it('returns the minimum element', function() {
+        expect(numVec1.min()).toBe(0);
+        var date = dateVec1.min();
+        expect(Object.prototype.toString.call(date)).toBe('[object Date]');
+        expect(date.getTime()).toBe(0);
+      });
+
+      it('returns missing if skipNa is false and any element is missing',
+        function() {
+          expect(numVec1.min(false)).toEqual(NaN);
+          expect(dateVec1.min(false)).toBe(null);
+
+          expect(jd.seq(5, 10).min(false)).toBe(5);
+        }
+      );
+
+      it('returns missing if there are no non-missing values', function() {
+        expect(jd.vector([], 'number').min()).toEqual(NaN);
+        expect(jd.vector([], 'boolean').min(false)).toEqual(null);
+        expect(jd.repNa(5, 'string').min()).toBe(null);
+      });
+    });
+
+    describe('max', function() {
+      it('returns the maximum element', function() {
+        expect(numVec1.max()).toBe(2);
+        var date = dateVec1.max();
+        expect(Object.prototype.toString.call(date)).toBe('[object Date]');
+        expect(date.getTime()).toBe(2);
+      });
+
+      it('returns missing if skipNa is false and any element is missing',
+        function() {
+          expect(numVec1.max(false)).toEqual(NaN);
+          expect(dateVec1.max(false)).toBe(null);
+
+          expect(jd.seq(5, 10).max(false)).toBe(9);
+        }
+      );
+
+      it('returns missing if there are no non-missing values', function() {
+        expect(jd.vector([], 'number').max()).toEqual(NaN);
+        expect(jd.vector([], 'boolean').max(false)).toEqual(null);
+        expect(jd.repNa(5, 'string').max()).toBe(null);
+      });
+    });
+
+    describe('cuMin', function() {
+      it('returns a vector of cumulative minimums', function() {
+        expect(numVec1.cuMin().values).toEqual([1, 0, 0, NaN, 0, 0]);
+
+        var dateVec = dateVec1.cuMin();
+        expect(dateVec.dtype).toBe('date');
+        expect(dateVec.toDtype('number').values).toEqual([1, 0, 0, NaN, 0, 0]);
+
+        expect(jd.vector([NaN, 1, 2, 0, 3]).cuMin().values).toEqual(
+          [NaN, 1, 1, 0, 0]
+        );
+      });
+
+      it('propagates missing values for all subsequent elements if skipNa ' +
+        'is false',
+        function() {
+          expect(numVec1.cuMin(false).values).toEqual([1, 0, 0, NaN, NaN, NaN]);
+        }
+      );
+    });
+
+    describe('cuMax', function() {
+      it('returns a vector of cumulative maximums', function() {
+        expect(numVec1.cuMax().values).toEqual([1, 1, 2, NaN, 2, 2]);
+
+        var dateVec = dateVec1.cuMax();
+        expect(dateVec.dtype).toBe('date');
+        expect(dateVec.toDtype('number').values).toEqual([1, 1, 2, NaN, 2, 2]);
+
+        expect(jd.vector([NaN, 1, 2, 0, 3]).cuMax().values).toEqual(
+          [NaN, 1, 2, 2, 3]
+        );
+      });
+
+      it('propagates missing values for all subsequent elements if skipNa ' +
+        'is false',
+        function() {
+          expect(numVec1.cuMax(false).values).toEqual([1, 1, 2, NaN, NaN, NaN]);
+        }
+      );
+    });
+
+    describe('idxMin', function() {
+      it('returns the integer index of the first occurrence of the minimum',
+        function() {
+          expect(numVec1.idxMin()).toBe(1);
+          expect(dateVec1.idxMin()).toBe(1);
+        }
+      );
+
+      it('returns NaN if skipNa is false and any element is missing',
+        function() {
+          expect(numVec1.idxMin(false)).toEqual(NaN);
+          expect(dateVec1.idxMin(false)).toEqual(NaN);
+
+          expect(jd.seq(5, 10).idxMin(false)).toBe(0);
+        }
+      );
+
+      it('returns NaN if there are no non-missing values', function() {
+        expect(jd.vector([], 'number').idxMin()).toEqual(NaN);
+        expect(jd.vector([], 'boolean').idxMin(false)).toEqual(NaN);
+        expect(jd.repNa(5, 'string').idxMin()).toEqual(NaN);
+      });
+    });
+
+    describe('idxMax', function() {
+      it('returns the integer index of the first occurrence of the minimum',
+        function() {
+          expect(numVec1.idxMax()).toBe(2);
+          expect(dateVec1.idxMax()).toBe(2);
+        }
+      );
+
+      it('returns NaN if skipNa is false and any element is missing',
+        function() {
+          expect(numVec1.idxMax(false)).toEqual(NaN);
+          expect(dateVec1.idxMax(false)).toEqual(NaN);
+
+          expect(jd.seq(5, 10).idxMax(false)).toBe(4);
+        }
+      );
+
+      it('returns NaN if there are no non-missing values', function() {
+        expect(jd.vector([], 'number').idxMax()).toEqual(NaN);
+        expect(jd.vector([], 'boolean').idxMax(false)).toEqual(NaN);
+        expect(jd.repNa(5, 'string').idxMax()).toEqual(NaN);
+      });
+    });
+
+    var numVec2 = jd.vector([NaN, -1, 1, 3]);
+    var dateVec2 = numVec2.toDtype('date');
+
+    describe('pMin', function() {
+      it('returns a vector of the element-wise minimums', function() {
+        expect(numVec2.pMin(0).values).toEqual([NaN, -1, 0, 0]);
+        expect(numVec2.pMin([0, NaN, 2, 2]).values).toEqual([NaN, NaN, 1, 2]);
+
+        var dateVec = dateVec2.pMin(new Date(0));
+        expect(dateVec.dtype).toBe('date');
+        expect(dateVec.values[0]).toBe(null);
+        expect(dateVec.toDtype('number').values).toEqual([NaN, -1, 0, 0]);
+      });
+
+      it('throws an error if the dtypes differ', function() {
+        expect(function() {
+          dateVec2.pMin('string');
+        }).toThrowError(/dtype/);
+      });
+    });
+
+    describe('pMax', function() {
+      it('returns a vector of the element-wise maximums', function() {
+        expect(numVec2.pMax(0).values).toEqual([NaN, 0, 1, 3]);
+        expect(numVec2.pMax([0, NaN, 2, 2]).values).toEqual([NaN, NaN, 2, 3]);
+
+        var dateVec = dateVec2.pMax(new Date(0));
+        expect(dateVec.dtype).toBe('date');
+        expect(dateVec.values[0]).toBe(null);
+        expect(dateVec.toDtype('number').values).toEqual([NaN, 0, 1, 3]);
+      });
+
+      it('throws an error if the dtypes differ', function() {
+        expect(function() {
+          dateVec2.pMax('string');
+        }).toThrowError(/dtype/);
+      });
+    });
+
+    describe('clip', function() {
+      it('clips this vector\'s values based on lower and upper', function() {
+        expect(numVec2.clip(0, 2).values).toEqual([NaN, 0, 1, 2]);
+        expect(numVec2.clip([0, 0, -1, 5], [1, 0, 0, 8]).values).toEqual(
+          [NaN, 0, 0, 5]
+        );
+      });
+
+      it('throws an error if the dtypes differ', function() {
+        expect(function() {
+          dateVec2.clip(0, 1);
+        }).toThrowError(/dtype/);
+      });
+
+      it('throws an error if lower > upper for any element', function() {
+        expect(function() {
+          numVec2.clip(5, 0);
+        }).toThrowError(/lower/);
+
+        expect(function() {
+          numVec2.clip([0, 0, -1, 5], [1, 0, 0, 0]);
+        }).toThrowError(/lower/);
+      });
+    });
+  });
+
 });

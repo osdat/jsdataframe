@@ -511,41 +511,118 @@ function numClose(x, y) {
 * Order-based
 */
 
-vectorProto.min = function() {
-  // TODO
+vectorProto.min = function(skipNa) {
+  var ind = this.idxMin(skipNa);
+  return Number.isNaN(ind) ? NA_VALUE[this.dtype] : this.values[ind];
 };
 
-vectorProto.max = function() {
-  // TODO
+
+vectorProto.max = function(skipNa) {
+  var ind = this.idxMax(skipNa);
+  return Number.isNaN(ind) ? NA_VALUE[this.dtype] : this.values[ind];
 };
 
-vectorProto.cuMin = function() {
-  // TODO
+
+vectorProto.cuMin = function(skipNa) {
+  if (isUndefined(skipNa)) {
+    skipNa = true;
+  }
+  var array = skipNa ?
+    cumulativeReduce(this.values, elemMin) :
+    cumulativeReduce(this.values, NA_VALUE[this.dtype], elemMin);
+  return newVector(array, this.dtype);
+};
+function elemMin(x, y) {
+  return compare(y, x) < 0 ? y : x;
+}
+
+
+vectorProto.cuMax = function(skipNa) {
+  if (isUndefined(skipNa)) {
+    skipNa = true;
+  }
+  var array = skipNa ?
+    cumulativeReduce(this.values, elemMax) :
+    cumulativeReduce(this.values, NA_VALUE[this.dtype], elemMax);
+  return newVector(array, this.dtype);
+};
+function elemMax(x, y) {
+  return compare(y, x) > 0 ? y : x;
+}
+
+
+vectorProto.idxMin = function(skipNa) {
+  if (isUndefined(skipNa)) {
+    skipNa = true;
+  }
+  var thisArray = this.values;
+  var minIndex = NaN;
+  var minValue = null;
+  for (var i = 0; i < thisArray.length; i++) {
+    var currVal = thisArray[i];
+    if (!isMissing(currVal)) {
+      if (compare(currVal, minValue) < 0 || Number.isNaN(minIndex)) {
+        minValue = currVal;
+        minIndex = i;
+      }
+    } else if (!skipNa) {
+      return NaN;
+    }
+  }
+  return minIndex;
 };
 
-vectorProto.cuMax = function() {
-  // TODO
+vectorProto.idxMax = function(skipNa) {
+  if (isUndefined(skipNa)) {
+    skipNa = true;
+  }
+  var thisArray = this.values;
+  var maxIndex = NaN;
+  var maxValue = null;
+  for (var i = 0; i < thisArray.length; i++) {
+    var currVal = thisArray[i];
+    if (!isMissing(currVal)) {
+      if (compare(currVal, maxValue) > 0 || Number.isNaN(maxIndex)) {
+        maxValue = currVal;
+        maxIndex = i;
+      }
+    } else if (!skipNa) {
+      return NaN;
+    }
+  }
+  return maxIndex;
 };
 
-vectorProto.idxMin = function() {
-  // TODO
+
+vectorProto.pMin = function(other) {
+  other = ensureVector(other, this.dtype);
+  validateVectorIsDtype(other, this.dtype);
+  var array = combineArrays(this.values, other.values, NA_VALUE[this.dtype],
+    elemMin);
+  return newVector(array, this.dtype);
 };
 
-vectorProto.idxMax = function() {
-  // TODO
+
+vectorProto.pMax = function(other) {
+  other = ensureVector(other, this.dtype);
+  validateVectorIsDtype(other, this.dtype);
+  var array = combineArrays(this.values, other.values, NA_VALUE[this.dtype],
+    elemMax);
+  return newVector(array, this.dtype);
 };
 
-vectorProto.pMin = function() {
-  // TODO
+
+vectorProto.clip = function(lower, upper) {
+  lower = ensureVector(lower, this.dtype);
+  upper = ensureVector(upper, this.dtype);
+  validateVectorIsDtype(lower, this.dtype);
+  validateVectorIsDtype(upper, this.dtype);
+  if (lower.gt(upper).any()) {
+    throw new Error('found one more elements where lower > upper');
+  }
+  return this.pMax(lower).pMin(upper);
 };
 
-vectorProto.pMax = function() {
-  // TODO
-};
-
-vectorProto.clip = function() {
-  // TODO
-};
 
 vectorProto.rank = function() {
   // TODO
@@ -881,6 +958,49 @@ function combineArrays(array1, array2, naValue, func) {
   return result;
 }
 jd._private_export.combineArrays = combineArrays;
+
+
+// Applies the given 'func' to reduce each element in 'array', returning
+// the cumulative results in a new array.  The 'naValue' argument
+// is optional.  Any missing value will result in a corresponding
+// missing element in the output, but if 'naValue' isn't specified,
+// the 'func' reduction will still be carried out on subsequent
+// non-missing elements.  On the other hand, if 'naValue' is supplied
+// it will be used as the output value for all elements following
+// the first missing value encountered.
+function cumulativeReduce(array, naValue, func) {
+  var skipMissing = false;
+  if (isUndefined(func)) {
+    func = naValue;
+    skipMissing = true;
+  }
+
+  var outputLen = array.length;
+  var result = allocArray(outputLen);
+
+  var accumulatedVal = undefined;
+  var foundNonMissing = false;
+  for (var i = 0; i < outputLen; i++) {
+    var currVal = array[i];
+    if (isMissing(currVal)) {
+      result[i] = currVal;
+      if (!skipMissing) {
+        // Fill the rest of the array with naValue and break;
+        for (var j = i + 1; j < outputLen; j++) {
+          result[j] = naValue;
+        }
+        break;
+      }
+    } else {
+      accumulatedVal = foundNonMissing ?
+        func(accumulatedVal, currVal) :
+        currVal;
+      foundNonMissing = true;
+      result[i] = accumulatedVal;
+    }
+  }
+  return result;
+}
 
 
 /*-----------------------------------------------------------------------------
