@@ -69,7 +69,7 @@ describe('vector methods:', function() {
   describe('missing values:', function() {
     var exampleVector = jd.vector([NaN, 1, NaN, 2, 3, NaN]);
 
-    describe('isNa', function() {
+    describe('vector.isNa', function() {
       it('behaves as expected', function() {
         var vector = exampleVector.isNa();
         expect(vector.dtype).toBe('boolean');
@@ -81,7 +81,7 @@ describe('vector methods:', function() {
       });
     });
 
-    describe('dropNa', function() {
+    describe('vector.dropNa', function() {
       it('remove missing values', function() {
         var vector = exampleVector.dropNa();
         expect(vector.dtype).toBe('number');
@@ -99,7 +99,7 @@ describe('vector methods:', function() {
       });
     });
 
-    describe('replaceNa', function() {
+    describe('vector.replaceNa', function() {
       it('replaces missing values with "value"', function() {
         var vector = exampleVector.replaceNa(-10);
         expect(vector.dtype).toBe('number');
@@ -128,7 +128,7 @@ describe('vector methods:', function() {
     var add = function(x, y) { return x + y; };
     var exampleNumVec = jd.vector([3, 0, 1, 20, 1]);
 
-    describe('map', function() {
+    describe('vector.map', function() {
 
       it('behaves as expected for the typical case', function() {
         var vector = jd.seq(3).map(function(x) { return x.toString(); });
@@ -146,21 +146,21 @@ describe('vector methods:', function() {
       );
     });
 
-    describe('reduce', function() {
+    describe('vector.reduce', function() {
 
       it('behaves as expected', function() {
         expect(jd.seq(5).reduce(add, 10)).toBe(20);
       });
     });
 
-    describe('reduceRight', function() {
+    describe('vector.reduceRight', function() {
 
       it('behaves as expected', function() {
         expect(jd.seq(5).reduceRight(add, 10)).toBe(20);
       });
     });
 
-    describe('findIndex', function() {
+    describe('vector.findIndex', function() {
 
       it('behaves as expected', function() {
         expect(exampleNumVec.findIndex(function(x) { return x === 1; }))
@@ -171,7 +171,7 @@ describe('vector methods:', function() {
       });
     });
 
-    describe('sort', function() {
+    describe('vector.sort', function() {
 
       it('behaves as expected without modifying the original vector',
         function() {
@@ -183,7 +183,7 @@ describe('vector methods:', function() {
       );
     });
 
-    describe('reverse', function() {
+    describe('vector.reverse', function() {
 
       it('behaves as expected without modifying the original vector',
         function() {
@@ -195,7 +195,7 @@ describe('vector methods:', function() {
       );
     });
 
-    describe('filter', function() {
+    describe('vector.filter', function() {
       var exampleVector = jd.vector([null, true, false, null, true]);
 
       it('has arguments like Array.prototype.filter', function() {
@@ -267,7 +267,7 @@ describe('vector methods:', function() {
       );
     });
 
-    describe('eq', function() {
+    describe('vector.eq', function() {
       it('checks element-wise equality', function() {
         expect(numberVector.eq(numberVector).values).toEqual(
           [null, true, true, true]
@@ -297,7 +297,7 @@ describe('vector methods:', function() {
       });
     });
 
-    describe('neq', function() {
+    describe('vector.neq', function() {
       it('checks element-wise non-equality', function() {
         expect(numberVector.neq(numberVector).values).toEqual(
           [null, false, false, false]
@@ -314,7 +314,7 @@ describe('vector methods:', function() {
       });
     });
 
-    describe('lt', function() {
+    describe('vector.lt', function() {
       it('checks element-wise less than', function() {
         expect(numberVector.lt(1).values).toEqual(
           [null, true, false, false]
@@ -331,7 +331,7 @@ describe('vector methods:', function() {
       });
     });
 
-    describe('gt', function() {
+    describe('vector.gt', function() {
       it('checks element-wise greater than', function() {
         expect(numberVector.gt(1).values).toEqual(
           [null, false, false, true]
@@ -342,7 +342,7 @@ describe('vector methods:', function() {
       });
     });
 
-    describe('lte', function() {
+    describe('vector.lte', function() {
       it('checks element-wise less than or equal to', function() {
         expect(numberVector.lte(1).values).toEqual(
           [null, true, true, false]
@@ -353,7 +353,7 @@ describe('vector methods:', function() {
       });
     });
 
-    describe('gte', function() {
+    describe('vector.gte', function() {
       it('checks element-wise greater than or equal to', function() {
         expect(numberVector.gte(1).values).toEqual(
           [null, false, true, true]
@@ -364,7 +364,7 @@ describe('vector methods:', function() {
       });
     });
 
-    describe('equals', function() {
+    describe('vector.equals', function() {
       it('returns false if "other" is not a vector or if the vectors have ' +
         'different lengths or dtypes',
         function() {
@@ -425,7 +425,7 @@ describe('vector methods:', function() {
     var numVec1 = jd.vector([1, 0, 2, NaN, 0, 2]);
     var dateVec1 = numVec1.toDtype('date');
 
-    describe('min', function() {
+    describe('vector.min', function() {
       it('returns the minimum element', function() {
         expect(numVec1.min()).toBe(0);
         var date = dateVec1.min();
@@ -449,7 +449,7 @@ describe('vector methods:', function() {
       });
     });
 
-    describe('max', function() {
+    describe('vector.max', function() {
       it('returns the maximum element', function() {
         expect(numVec1.max()).toBe(2);
         var date = dateVec1.max();
@@ -473,7 +473,7 @@ describe('vector methods:', function() {
       });
     });
 
-    describe('cuMin', function() {
+    describe('vector.cuMin', function() {
       it('returns a vector of cumulative minimums', function() {
         expect(numVec1.cuMin().values).toEqual([1, 0, 0, NaN, 0, 0]);
 
@@ -494,7 +494,7 @@ describe('vector methods:', function() {
       );
     });
 
-    describe('cuMax', function() {
+    describe('vector.cuMax', function() {
       it('returns a vector of cumulative maximums', function() {
         expect(numVec1.cuMax().values).toEqual([1, 1, 2, NaN, 2, 2]);
 
@@ -515,7 +515,7 @@ describe('vector methods:', function() {
       );
     });
 
-    describe('idxMin', function() {
+    describe('vector.idxMin', function() {
       it('returns the integer index of the first occurrence of the minimum',
         function() {
           expect(numVec1.idxMin()).toBe(1);
@@ -539,7 +539,7 @@ describe('vector methods:', function() {
       });
     });
 
-    describe('idxMax', function() {
+    describe('vector.idxMax', function() {
       it('returns the integer index of the first occurrence of the minimum',
         function() {
           expect(numVec1.idxMax()).toBe(2);
@@ -566,7 +566,7 @@ describe('vector methods:', function() {
     var numVec2 = jd.vector([NaN, -1, 1, 3]);
     var dateVec2 = numVec2.toDtype('date');
 
-    describe('pMin', function() {
+    describe('vector.pMin', function() {
       it('returns a vector of the element-wise minimums', function() {
         expect(numVec2.pMin(0).values).toEqual([NaN, -1, 0, 0]);
         expect(numVec2.pMin([0, NaN, 2, 2]).values).toEqual([NaN, NaN, 1, 2]);
@@ -584,7 +584,7 @@ describe('vector methods:', function() {
       });
     });
 
-    describe('pMax', function() {
+    describe('vector.pMax', function() {
       it('returns a vector of the element-wise maximums', function() {
         expect(numVec2.pMax(0).values).toEqual([NaN, 0, 1, 3]);
         expect(numVec2.pMax([0, NaN, 2, 2]).values).toEqual([NaN, NaN, 2, 3]);
@@ -602,7 +602,7 @@ describe('vector methods:', function() {
       });
     });
 
-    describe('clip', function() {
+    describe('vector.clip', function() {
       it('clips this vector\'s values based on lower and upper', function() {
         expect(numVec2.clip(0, 2).values).toEqual([NaN, 0, 1, 2]);
         expect(numVec2.clip([0, 0, -1, 5], [1, 0, 0, 8]).values).toEqual(
@@ -624,6 +624,116 @@ describe('vector methods:', function() {
         expect(function() {
           numVec2.clip([0, 0, -1, 5], [1, 0, 0, 0]);
         }).toThrowError(/lower/);
+      });
+    });
+  });
+
+  describe('membership methods:', function() {
+    var numVec = jd.vector([2, NaN, 0, 2, 2, NaN, 1, 1,   NaN, NaN]);
+    var dateVec = numVec.toDtype('date');
+    var strVec = numVec.toDtype('string');
+    var objVec = numVec.toDtype('object');
+
+    it('all membership methods throw an error for object dtypes', function() {
+      expect(function() {
+        objVec.isIn([1, 2]);
+      }).toThrowError(/"object"/);
+
+      var methods = ['valueCounts', 'unique', 'nUnique', 'duplicated'];
+      methods.forEach(function(method) {
+        expect(function() {
+          objVec[method]();
+        }).toThrowError(/"object"/);
+      });
+    });
+
+    describe('vector.isIn', function() {
+      it('behaves as expected for valid vector, array, or scalar "values"',
+        function() {
+          expect(numVec.isIn(null).values).toEqual(
+            [false, true, false, false, false, true, false, false, true, true]
+          );
+          expect(strVec.isIn(['0', '2', null]).values).toEqual(
+            [true, true, true, true, true, true, false, false, true, true]
+          );
+          expect(dateVec.isIn(jd.seq(3).toDtype('date')).values).toEqual(
+            [true, false, true, true, true, false, true, true, false, false]
+          );
+
+          var boolVec = numVec.isIn([]);
+          expect(boolVec.dtype).toBe('boolean');
+          expect(boolVec.values).toEqual(jd.rep(false, 10).values);
+
+          var boolVec2 = jd.vector([], 'number').isIn(10);
+          expect(boolVec2.dtype).toBe('boolean');
+          expect(boolVec2.values).toEqual([]);
+        }
+      );
+
+      it ('throws an error if "values" resolves to a different dtype',
+        function() {
+          expect(function() {
+            numVec.isIn('test');
+          }).toThrowError(/dtype/);
+        }
+      );
+    });
+
+    describe('vector.unique', function() {
+      it('behaves as expected', function() {
+        var expected = jd.vector([2, NaN, 0, 1]);
+        expect(numVec.unique().values).toEqual(expected.values);
+        expect(dateVec.unique().values).toEqual(
+          expected.toDtype('date').values
+        );
+        expect(strVec.unique().values).toEqual(
+          expected.toDtype('string').values
+        );
+
+        expect(jd.seq(3).unique().values).toEqual(jd.seq(3).values);
+
+        var emptyVec = jd.vector([], 'number').unique();
+        expect(emptyVec.dtype).toBe('number');
+        expect(emptyVec.values).toEqual([]);
+      });
+    });
+
+    describe('vector.nUnique', function() {
+      it('behaves as expected', function() {
+        var expected = jd.vector([2, NaN, 0, 1]);
+        expect(numVec.nUnique()).toBe(4);
+        expect(dateVec.nUnique()).toBe(4);
+        expect(strVec.nUnique()).toBe(4);
+
+        expect(jd.seq(3).nUnique()).toBe(3);
+
+        expect(jd.vector([], 'number').nUnique()).toBe(0);
+      });
+    });
+
+    describe('vector.duplicated', function() {
+      it('behaves as expected', function() {
+        //var numVec = jd.vector([2, NaN, 0, 2, 2, NaN, 1, 1,   NaN, NaN]);
+        [numVec, dateVec, strVec].forEach(function(vector) {
+          expect(vector.duplicated().values).toEqual(
+            [false, false, false, true, true, true, false, true, true, true]
+          );
+          expect(vector.duplicated('first').values).toEqual(
+            [false, false, false, true, true, true, false, true, true, true]
+          );
+          expect(vector.duplicated('last').values).toEqual(
+            [true, true, false, true, false, true, true, false, true, false]
+          );
+          expect(vector.duplicated(false).values).toEqual(
+            [true, true, false, true, true, true, true, true, true, true]
+          );
+        });
+
+        expect(jd.seq(3).duplicated().values).toEqual([false, false, false]);
+
+        var emptyVec = jd.vector([], 'number').duplicated();
+        expect(emptyVec.dtype).toBe('boolean');
+        expect(emptyVec.values).toEqual([]);
       });
     });
   });

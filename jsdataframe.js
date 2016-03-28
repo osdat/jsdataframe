@@ -33,12 +33,38 @@ var jd = exports;
 */
 
 var vectorProto = {};
+vectorProto.type = 'Vector';
 var numVecProto = Object.create(vectorProto);
 var boolVecProto = Object.create(vectorProto);
 var strVecProto = Object.create(vectorProto);
 var dateVecProto = Object.create(vectorProto);
 
 var dfProto = {};
+dfProto.type = 'DataFrame';
+
+
+// Supporting types
+
+var rangeProto = {};
+rangeProto.type = 'Range';
+
+var rangeCatProto = {};
+rangeCatProto.type = 'RangeCat';
+
+var byDtypeProto = {};
+byDtypeProto.type = 'ByDtype';
+
+var exclusionProto = {};
+exclusionProto.type = 'Exclusion';
+
+
+// Private helper types
+
+var abstractIndexProto = {};
+abstractIndexProto.type = 'AbstractIndex';
+
+var nestedIndexProto = Object.create(abstractIndexProto);
+nestedIndexProto.type = 'NestedIndex';
 
 
 /*-----------------------------------------------------------------------------
@@ -75,6 +101,10 @@ var COERCE_FUNC = {
   date: coerceToDate,
   object: function(x) { return x; }
 };
+
+
+// Private exports for testing purposes
+jd._private_export = {};
 
 
 /*=============================================================================
@@ -241,12 +271,12 @@ jd.repNa = function(times, dtype) {
 
 */
 
-vectorProto.type = 'Vector';
 vectorProto.dtype = 'object';
 
 // Initializes the vector instance's properties
 vectorProto._init = function(array) {
   this.values = array;
+  this._index = null;
 };
 
 
@@ -633,11 +663,15 @@ vectorProto.rank = function() {
 * Computations
 */
 
-vectorProto.isIn = function() {
-  // TODO
+vectorProto.isIn = function(values) {
+  validateVectorIsNotDtype(this, 'object');
+  values = ensureVector(values, this.dtype);
+  validateVectorIsDtype(values, this.dtype);
+  return values._getIndex().has([this]);
 };
 
 vectorProto.valueCounts = function() {
+  validateVectorIsNotDtype(this, 'object');
   // TODO
 };
 
@@ -646,11 +680,18 @@ vectorProto.combine = function() {
 };
 
 vectorProto.unique = function() {
-  // TODO
+  validateVectorIsNotDtype(this, 'object');
+  return this._getIndex().unique()[0];
 };
 
-vectorProto.duplicated = function() {
-  // TODO
+vectorProto.nUnique = function() {
+  validateVectorIsNotDtype(this, 'object');
+  return this._getIndex().size;
+};
+
+vectorProto.duplicated = function(keep) {
+  validateVectorIsNotDtype(this, 'object');
+  return this._getIndex().duplicated(keep);
 };
 
 vectorProto.intersect = function() {
@@ -663,6 +704,16 @@ vectorProto.replace = function() {
 
 vectorProto.describe = function() {
   // TODO
+};
+
+
+// Private helper for retrieving the index or creating one if it's not
+// yet present
+vectorProto._getIndex = function() {
+  if (this._index === null) {
+    this._index = newNestedIndex([this]);
+  }
+  return this._index;
 };
 
 
@@ -834,7 +885,266 @@ dateVecProto.dtype = 'date';
 
 */
 
-dfProto.type = 'DataFrame';
+
+/*=============================================================================
+
+  ####  #    # #####  #####   ####  #####  #####
+ #      #    # #    # #    # #    # #    #   #
+  ####  #    # #    # #    # #    # #    #   #
+      # #    # #####  #####  #    # #####    #
+ #    # #    # #      #      #    # #   #    #
+  ####   ####  #      #       ####  #    #   #
+
+*/
+
+// Public supporting types
+
+
+/*=============================================================================
+
+ # #    # #####  ###### #    # ######  ####
+ # ##   # #    # #       #  #  #      #
+ # # #  # #    # #####    ##   #####   ####
+ # #  # # #    # #        ##   #           #
+ # #   ## #    # #       #  #  #      #    #
+ # #    # #####  ###### #    # ######  ####
+
+*/
+
+// Private helper types for fast lookup of row numbers based on row content.
+// Indexes can be built for data frames or vectors.  The term "row number"
+// will be used for both cases, even though a "row" is just a single
+// element in the vector case.
+
+
+/*-----------------------------------------------------------------------------
+* AbstractIndex
+*/
+
+// Abstract index methods defined in terms of the following
+// properties that a concrete implementation must define:
+// 1. lookup(vectors, i) - a method for looking up the row numbers
+// associated with the row content at index i in the given vectors
+// 2. initVectors - a property containing the array of vectors
+// originally used to create this index
+// 3. size - a property containing the number of unique keys
+//
+// So far the only concrete implementation is NestedIndex.
+// Some potential future alternatives:
+// 1. Sorted key index using binary search for lookup
+// 2. Use string concatenation for compound keys instead of nesting
+// 3. Implement a hash table from scratch for generic keys with 'hashCode'
+// and 'equals'
+
+
+// This method should be overriden by a concrete implementation.
+// It should return the row numbers associated with the entry indexed by i
+// within the given "vectors" array.
+// Returns an array of integer row numbers if there are multiple or
+// just returns an integer if there's only one row number.
+// Returns null if there are no associated row numbers.
+abstractIndexProto.lookup = function(vectors, i) {
+  throw new Error('abstract "lookup" method called without concrete ' +
+    'implementation');
+};
+
+
+// Returns a boolean vector the same length as the vectors in 'vectors'
+// that's true for every row contained in this index and false otherwise.
+abstractIndexProto.has = function(vectors) {
+  var numRows = vectors[0].size();
+  var result = allocArray(numRows);
+  for (var i = 0; i < numRows; i++) {
+    result[i] = this.lookup(vectors, i) === null ? false : true;
+  }
+  return newVector(result, 'boolean');
+};
+
+
+// Implements the logic for the 'valueCounts' method.
+// Returns an object with 'vectors' property containing an array
+// of vectors of unique rows and 'counts' property containing
+// a number vector of corresponding counts.
+abstractIndexProto.valueCounts = function() {
+  var initVectors = this.initVectors;
+  var arity = initVectors.length;
+  var numKeys = this.size;
+  var outputValues = allocArray(arity);
+  for (var j = 0; j < arity; j++) {
+    outputValues[j] = allocArray(numKeys);
+  }
+  var counts = allocArray(numKeys);
+
+  // Populate values and counts
+  var initNumRows = initVectors[0].size();
+  var outputRow = 0;
+  for (var i = 0; i < initNumRows; i++) {
+    var rowNums = this.lookup(initVectors, i);
+    if (rowNums === i || rowNums[0] === i) {
+      for (j = 0; j < arity; j++) {
+        outputValues[j][outputRow] = initVectors[j].values[i];
+      }
+      counts[outputRow] = (rowNums === i) ? 1 : rowNums.length;
+      outputRow++;
+    }
+  }
+
+  // Wrap values and counts as vectors
+  var outputVectors = outputValues.map(function(array, j) {
+    return newVector(array, initVectors[j].dtype);
+  });
+  return {
+    vectors: outputVectors,
+    counts: newVector(counts, 'number')
+  };
+};
+
+
+// Implements the logic for the 'unique' method.
+// Returns an array of vectors containing the unique rows
+abstractIndexProto.unique = function() {
+  return this.valueCounts().vectors;
+};
+
+
+// Implements the logic for the 'duplicated' method.
+// Returns a boolean vector denoting duplicate rows.
+// 'keep' must be one of 3 values:
+// 1. 'first' string: mark duplicates as true except for the first occurrence.
+//    This is the default.
+// 2. 'last' string: mark duplicates as true except for the last occurrence
+// 3. false boolean: will mark all duplicates as true
+abstractIndexProto.duplicated = function(keep) {
+  if (isUndefined(keep)) {
+    keep = 'first';
+  }
+  var keepFirst = false;
+  var keepLast = false;
+  if (keep === 'first') {
+    keepFirst = true;
+  } else if (keep === 'last') {
+    keepLast = true;
+  } else if (keep !== false) {
+    throw new Error('"keep" must be either "first", "last", or false');
+  }
+
+  var initVectors = this.initVectors;
+  var arity = initVectors.length;
+  var initNumRows = initVectors[0].size();
+  var result = allocArray(initNumRows);
+  for (var i = 0; i < initNumRows; i++) {
+    result[i] = false;
+  }
+
+  // Populate values and counts
+  var startInd = keepFirst ? 1 : 0;
+  for (i = 0; i < initNumRows; i++) {
+    var rowNums = this.lookup(initVectors, i);
+    if (typeof rowNums !== 'number' && rowNums[0] === i) {
+      var rowNumLen = rowNums.length;
+      var stopInd = keepLast ? rowNumLen - 1 : rowNumLen;
+      for (var j = startInd; j < stopInd; j++) {
+        result[rowNums[j]] = true;
+      }
+    }
+  }
+
+  return newVector(result, 'boolean');
+};
+
+
+/*-----------------------------------------------------------------------------
+* NestedIndex
+*/
+
+// This implementation uses nested objects to handle multiple vectors.
+
+var ESCAPED_KEYS = {
+  null: '_INTERNAL_JSDATAFRAME_NULL_KEY_',
+  undefined: '_INTERNAL_JSDATAFRAME_UNDEFINED_KEY_'
+};
+
+// Returns a clean version of the given 'key', transforming if the dtype
+// doesn't hash well directly and escaping if necessary to avoid
+// collisions for missing values
+function cleanKey(key, dtype) {
+  return (
+    key === null ? ESCAPED_KEYS.null :
+    isUndefined(key) ? ESCAPED_KEYS.undefined :
+    dtype === 'date' ? key.valueOf() :
+    key
+  );
+}
+
+
+// Creates a new NestedIndex for the given 'vectors' array (which may contain
+// only a single element to index a single vector).
+function newNestedIndex(vectors) {
+  var arity = vectors.length;
+  if (arity === 0) {
+    throw new Error('cannot index an empty list of vectors');
+  }
+  var numRows = vectors[0].size();
+
+  // Initialize properties
+  var nestedIndex = Object.create(nestedIndexProto);
+  nestedIndex.initVectors = vectors;
+  nestedIndex.size = 0;
+  nestedIndex._map = Object.create(null);
+
+  // Build index
+  var rootMap = nestedIndex._map;
+  var lastColInd = arity - 1;
+  for (var i = 0; i < numRows; i++) {
+    var currMap = rootMap;
+    var currVector, key;
+    for (var j = 0; j < lastColInd; j++) {
+      currVector = vectors[j];
+      key = cleanKey(currVector.values[i], currVector.dtype);
+      var innerMap = currMap[key];
+
+      // Create innerMap if not present
+      if (isUndefined(innerMap)) {
+        currMap[key] = innerMap = Object.create(null);
+      }
+      currMap = innerMap;
+    }
+
+    // Add the row number to the entry
+    currVector = vectors[lastColInd];
+    key = cleanKey(currVector.values[i], currVector.dtype);
+    var rowNums = currMap[key];
+    if (isUndefined(rowNums)) {
+      currMap[key] = i;
+      nestedIndex.size++;
+    } else if (typeof rowNums === 'number') {
+      currMap[key] = [rowNums, i];
+    } else {
+      // rowNums must be an array
+      rowNums.push(i);
+    }
+  }
+
+  return nestedIndex;
+}
+jd._private_export.newNestedIndex = newNestedIndex;
+
+
+nestedIndexProto.lookup = function(vectors, i) {
+  var arity = this.initVectors.length;
+  var nestedMap = this._map;
+  for (var j = 0; j < arity; j++) {
+    var currVector = vectors[j];
+    var key = cleanKey(currVector.values[i], currVector.dtype);
+    nestedMap = nestedMap[key];
+    if (isUndefined(nestedMap)) {
+      return null;
+    }
+  }
+  // The last iteration (j === arity - 1) replaces 'nestedMap' with
+  // the desired row numbers
+  return nestedMap;
+};
 
 
 /*=============================================================================
@@ -848,7 +1158,7 @@ dfProto.type = 'DataFrame';
 
 */
 
-jd._private_export = {};
+// Private helper functions
 
 
 // Defines which values are considered "missing" in jsdataframe
@@ -861,7 +1171,9 @@ function isMissing(value) {
 // We define a function in case we want to tune our preallocation
 // strategy later.  (e.g. http://www.html5rocks.com/en/tutorials/speed/v8/)
 function allocArray(numElems) {
-  return new Array(numElems);
+  return numElems < 64000 ?
+    new Array(numElems) :
+    [];
 }
 
 
@@ -905,6 +1217,7 @@ function reduceNonNa(array, initValue, func) {
   return result;
 }
 jd._private_export.reduceNonNa = reduceNonNa;
+
 
 // Performs a left-to-right reduce on 'array' using 'func' starting with
 // 'initValue' unless there's an element for which 'condFunc' returns truthy,
@@ -978,7 +1291,7 @@ function cumulativeReduce(array, naValue, func) {
   var outputLen = array.length;
   var result = allocArray(outputLen);
 
-  var accumulatedVal = undefined;
+  var accumulatedVal = null;
   var foundNonMissing = false;
   for (var i = 0; i < outputLen; i++) {
     var currVal = array[i];
@@ -1190,8 +1503,15 @@ function validateNonnegInt(value, varName) {
 // Returns undefined or throws an error if invalid
 function validateVectorIsDtype(vector, dtype) {
   if (vector.dtype !== dtype) {
-    throw new Error('expected vector dtype to be ' + dtype + ' but got ' +
-      vector.dtype);
+    throw new Error('expected vector dtype to be "' + dtype + '" but got "' +
+      vector.dtype + '"');
+  }
+}
+
+// Returns undefined or throws an error if invalid
+function validateVectorIsNotDtype(vector, dtype) {
+  if (vector.dtype === dtype) {
+    throw new Error('unsupported operation for dtype "' + dtype + '"');
   }
 }
 
