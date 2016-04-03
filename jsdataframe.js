@@ -1878,9 +1878,14 @@ function enforceVectorDtype(array, dtype) {
 
 
 // Creates a new vector backed by the given array by inferring the dtype
-// based on the array's values.  The first value for which 'inferDtype' is
-// conclusive determines the dtype for the entire vector, and all elements
-// are coerced to this inferred dtype.  The 'defaultDtype' argument
+// based on the array's values.  If all elements have the same inferred
+// dtype, this dtype will be used for the resulting vector.  If any
+// two elements have different inferred dtypes, the resulting vector dtype
+// will be "object", and none of the elements of the array will be altered.
+// Any null or undefined elements are ignored since dtype inference is
+// inconslusive for them, but if a non-"object" dtype is inferred for
+// the vector, all missing elements will be standarized to use
+// the same value (according to NA_VALUE).  The 'defaultDtype' argument
 // determines the resulting dtype only if all values are inconclusive.
 // If 'defaultDtype' is undefined it will default to 'object'.
 function inferVectorDtype(array, defaultDtype) {
@@ -1888,39 +1893,42 @@ function inferVectorDtype(array, defaultDtype) {
     defaultDtype = 'object';
   }
   var dtype = null;
-  var coerceFunc = null;
 
-  // Coerce all elements to dtype upon inferring it
+  // Attempt to infer the dtype
   for (var i = 0; i < array.length; i++) {
-    if (coerceFunc === null) {
-      var inferredDtype = inferDtype(array[i]);
-      if (inferredDtype !== null) {
+    var inferredDtype = inferDtype(array[i]);
+    if (inferredDtype !== null) {
+      if (dtype === null) {
         dtype = inferredDtype;
-        coerceFunc = COERCE_FUNC[dtype];
-        // Apply inferred dtype to all previous elements
-        for (var j = 0; j <= i; j++) {
-          array[j] = coerceFunc(array[j]);
-        }
       }
-    } else {
-      array[i] = coerceFunc(array[i]);
+      if (dtype !== inferredDtype || inferredDtype === 'object') {
+        return newVector(array, 'object');
+      }
     }
   }
 
   // Use 'defaultDtype' if all inferences were inconclusive
+  var naValue;
   if (dtype === null) {
     dtype = defaultDtype;
-
-    // Make sure all values are normalized to the right missing value dtype
     if (dtype !== 'object') {
-      var naValue = NA_VALUE[dtype];
+      naValue = NA_VALUE[dtype];
       for (i = 0; i < array.length; i++) {
         array[i] = naValue;
       }
     }
+    return newVector(array, dtype);
   }
 
-  // Construct vector
+  // Make sure all values are normalized to the right missing value dtype
+  if (dtype !== 'object') {
+    naValue = NA_VALUE[dtype];
+    for (i = 0; i < array.length; i++) {
+      if (isMissing(array[i])) {
+        array[i] = naValue;
+      }
+    }
+  }
   return newVector(array, dtype);
 }
 jd._private_export.inferVectorDtype = inferVectorDtype;
@@ -2119,15 +2127,15 @@ function readOnlyEnumProp(value) {
 }
 
 function isNumber(obj) {
-  return Object.prototype.toString.call(obj) === '[object Number]';
+  return typeof obj === 'number';
 }
 
 function isBoolean(obj) {
-  return Object.prototype.toString.call(obj) === '[object Boolean]';
+  return typeof obj === 'boolean';
 }
 
 function isString(obj) {
-  return Object.prototype.toString.call(obj) === '[object String]';
+  return typeof obj === 'string';
 }
 
 function isDate(obj) {
@@ -2135,7 +2143,7 @@ function isDate(obj) {
 }
 
 function isUndefined(obj) {
-  return obj === void 0;
+  return typeof obj === 'undefined';
 }
 
 

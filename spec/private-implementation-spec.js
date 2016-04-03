@@ -140,11 +140,21 @@ describe('private implementation tests:', function() {
     describe('inferVectorDtype', function() {
       var inferVectorDtype = jd._private_export.inferVectorDtype;
 
-      it('uses the inferred dtype of the first conclusive array element',
+      it('uses the common dtype if all elements are consistent',
         function() {
-          var vector = inferVectorDtype([null, NaN, '1'], 'date');
+          var vector = inferVectorDtype([NaN, null, 1], 'date');
           expect(vector.dtype).toEqual('number');
           expect(vector.values).toEqual([NaN, NaN, 1]);
+
+          expect(inferVectorDtype([null, 'x', 'y']).dtype).toBe('string');
+        }
+      );
+
+      it('uses "object" dtype if there are any inconsistencies',
+        function() {
+          var vector = inferVectorDtype([NaN, null, 'x'], 'date');
+          expect(vector.dtype).toEqual('object');
+          expect(vector.values).toEqual([NaN, null, 'x']);
         }
       );
 
@@ -156,7 +166,7 @@ describe('private implementation tests:', function() {
         }
       );
 
-      it('treats NaN and null missing values appropriate for "defaultDtype"',
+      it('treats NaN and null values differently (e.g. for "defaultDtype")',
         function() {
           expect(inferVectorDtype([NaN], 'date').dtype).toBe('number');
 

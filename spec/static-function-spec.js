@@ -17,11 +17,12 @@ describe('static functions:', function() {
         // with input array first, then expected dtype, then expected values
         var exampleArray = [
           [[0, 1, 2], 'number', [0, 1, 2]],
-          [[null, 1, '2'], 'number', [NaN, 1, 2]],
+          [[NaN, null, 1], 'number', [NaN, NaN, 1]],
+          [[null, 1, '2'], 'object', [null, 1, '2']],
           [[undefined, null, NaN], 'number', [NaN, NaN, NaN]],
-          [[null, true, false], 'boolean', [null, true, false]],
-          [[null, 'test', 1], 'string', [null, 'test', '1']],
-          [[null, unixStart, 0], 'date', [null, unixStart, unixStart]],
+          [[null, 'x', 'y', undefined], 'string', [null, 'x', 'y', null]],
+          [[true, false, undefined], 'boolean', [true, false, null]],
+          [[null, unixStart, undefined], 'date', [null, unixStart, null]],
           [[['array'], {}, 0], 'object', [['array'], {}, 0]],
           [[null, undefined, null], 'object', [null, undefined, null]],
           [[], 'object', []]
