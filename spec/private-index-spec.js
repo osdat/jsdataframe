@@ -23,6 +23,7 @@ describe('private index types:', function() {
         var nestedIndex = newNestedIndex(initVectors);
         expect(nestedIndex.initVectors).toBe(initVectors);
         expect(nestedIndex.size).toBe(4);
+        expect(nestedIndex.arity).toBe(1);
       });
 
       it('lookup behaves as expected', function() {
@@ -34,6 +35,10 @@ describe('private index types:', function() {
         expect(nestedIndex.lookup(lookupKeys, 3)).toEqual([1, 5, 8, 9]);
         expect(nestedIndex.lookup(lookupKeys, 4)).toBe(null);
 
+        expect(nestedIndex.lookupKey([0])).toEqual(2);
+        expect(nestedIndex.lookupKey([NaN])).toEqual([1, 5, 8, 9]);
+        expect(nestedIndex.lookupKey([5])).toBe(null);
+
         var nestedIndex2 = newNestedIndex([vec2]);
         var lookupKeys2 = [jd.vector([0, 1, 2, NaN, 5]).toDtype('date')];
         expect(nestedIndex2.lookup(lookupKeys2, 0)).toBe(2);
@@ -41,6 +46,10 @@ describe('private index types:', function() {
         expect(nestedIndex2.lookup(lookupKeys2, 2)).toEqual([0, 3]);
         expect(nestedIndex2.lookup(lookupKeys2, 3)).toEqual([1, 7, 8, 9]);
         expect(nestedIndex2.lookup(lookupKeys2, 4)).toBe(null);
+
+        expect(nestedIndex2.lookupKey([new Date(0)])).toEqual(2);
+        expect(nestedIndex2.lookupKey([null])).toEqual([1, 7, 8, 9]);
+        expect(nestedIndex2.lookupKey([new Date(5)])).toBe(null);
       });
     });
 
@@ -51,9 +60,11 @@ describe('private index types:', function() {
         var nestedIndex = newNestedIndex(initVectors);
         expect(nestedIndex.initVectors).toBe(initVectors);
         expect(nestedIndex.size).toBe(7);
+        expect(nestedIndex.arity).toBe(3);
 
         var nestedIndex2 = newNestedIndex([vec2, vec3]);
         expect(nestedIndex2.size).toBe(4);
+        expect(nestedIndex2.arity).toBe(2);
       });
 
       it('lookup behaves as expected', function() {
@@ -71,6 +82,10 @@ describe('private index types:', function() {
         expect(nestedIndex.lookup(lookupKeys, 4)).toBe(5);
         expect(nestedIndex.lookup(lookupKeys, 5)).toBe(null);
         expect(nestedIndex.lookup(lookupKeys, 6)).toBe(null);
+
+        expect(nestedIndex.lookupKey([0, new Date(0), '0'])).toEqual(2);
+        expect(nestedIndex.lookupKey([NaN, null, null])).toEqual([1, 8, 9]);
+        expect(nestedIndex.lookupKey([5, new Date(5), '5'])).toBe(null);
       });
     });
   });

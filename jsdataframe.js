@@ -350,28 +350,95 @@ vectorProto.replaceNa = function(value) {
 * Subset Selection / Modification
 */
 
-vectorProto.s = function() {
-  // TODO
+vectorProto.s = function(selector) {
+  var intIdxVec = standardIndexing(selector, this.values.length);
+  if (intIdxVec === null) {
+    return this;
+  }
+  var intIdxArr = intIdxVec.values;
+  var result = allocArray(intIdxArr.length);
+  for (var i = 0; i < intIdxArr.length; i++) {
+    result[i] = this.values[intIdxArr[i]];
+  }
+  return newVector(result, this.dtype);
 };
 
-vectorProto.sMod = function() {
-  // TODO
+
+vectorProto.sMod = function(selector, values) {
+  var intIdxVec = standardIndexing(selector, this.values.length);
+  if (intIdxVec === null) {
+    intIdxVec = jd.seq(this.values.length);
+  }
+  values = ensureVector(values, this.dtype);
+  validateVectorIsDtype(values, this.dtype);
+  var isSingleValue = (values.size() === 1);
+  if (!isSingleValue && values.size() !== intIdxVec.size()) {
+    throw new Error('length mismatch: cannot assign ' + values.size() +
+      ' values to a selection of length ' + intIdxVec.size());
+  }
+
+  var intIdxArr = intIdxVec.values;
+  var result = this.values.slice();
+  for (var i = 0; i < intIdxArr.length; i++) {
+    result[intIdxArr[i]] = isSingleValue ? values.values[0] : values.values[i];
+  }
+  return newVector(result, this.dtype);
 };
 
-vectorProto.at = function() {
-  // TODO
+
+vectorProto.at = function(i) {
+  i = ensureScalar(i);
+  i = resolveIntIdx(i, this.size());
+  return this.values[i];
 };
 
-vectorProto.head = function() {
-  // TODO
+
+vectorProto.head = function(n) {
+  if (isUndefined(n)) {
+    n = 6;
+  }
+  validateInt(n, 'n');
+  return this.s(jd.r(0, n));
 };
 
-vectorProto.tail = function() {
-  // TODO
+
+vectorProto.tail = function(n) {
+  if (isUndefined(n)) {
+    n = 6;
+  }
+  validateInt(n, 'n');
+  var start = (n < 0) ? -n : this.size() - n;
+  return this.s(jd.r(start, undefined));
 };
 
-vectorProto.ifElse = function() {
-  // TODO
+
+vectorProto.ifElse = function(cond, other) {
+  cond = ensureVector(cond, 'boolean');
+  if (cond.size() !== this.size()) {
+    throw new Error('"cond" must be the same length as this vector');
+  }
+  validateVectorIsDtype(cond, 'boolean');
+
+  other = ensureVector(other, this.dtype);
+  validateVectorIsDtype(other, this.dtype);
+
+  var resultArr = combineMultipleArrays(
+    [this.values, cond.values, other.values, [NA_VALUE[this.dtype]]],
+    elemIfElse
+  );
+  return newVector(resultArr, this.dtype);
+};
+function elemIfElse(thisElem, cond, other, naValue) {
+  return (
+    isMissing(cond) ? naValue :
+    cond ? thisElem :
+    other
+  );
+}
+
+
+vectorProto.ex = function() {
+  return jd.ex(this);
 };
 
 
@@ -426,6 +493,27 @@ vectorProto.filter = function() {
   var array = Array.prototype.filter.apply(this.values, arguments);
   return newVector(array, this.dtype);
 };
+
+
+vectorProto.combine = function() {
+  var numArgs = arguments.length;
+  if (numArgs < 2) {
+    throw new Error('must supply at least one "varg"');
+  }
+  var func = arguments[numArgs - 1];
+  if (typeof func !== 'function') {
+    throw new Error('the last argument to "combine" must be a function');
+  }
+
+  var vargArrays = allocArray(numArgs);
+  vargArrays[0] = this.values;
+  for (var j = 1; j < numArgs; j++) {
+    vargArrays[j] = ensureVector(arguments[j - 1]).values;
+  }
+  var resultArray = combineMultipleArrays(vargArrays, func);
+  return jd.vector(resultArray);
+};
+
 
 
 /*-----------------------------------------------------------------------------
@@ -647,11 +735,26 @@ vectorProto.clip = function(lower, upper) {
   upper = ensureVector(upper, this.dtype);
   validateVectorIsDtype(lower, this.dtype);
   validateVectorIsDtype(upper, this.dtype);
-  if (lower.gt(upper).any()) {
-    throw new Error('found one more elements where lower > upper');
-  }
-  return this.pMax(lower).pMin(upper);
+  var resultArr = combineMultipleArrays(
+    [this.values, lower.values, upper.values],
+    elemClip
+  );
+  return newVector(resultArr, this.dtype);
 };
+function elemClip(elem, lower, upper) {
+  var missingLower = isMissing(lower);
+  var missingUpper = isMissing(upper);
+  if (!missingLower && !missingUpper && lower > upper) {
+    throw new Error('invalid range: lower (' + lower + ') > upper (' +
+      upper + ')');
+  }
+  return (
+    isMissing(elem) ? elem :
+    (!missingLower && elem < lower) ? lower :
+    (!missingUpper && elem > upper) ? upper :
+    elem
+  );
+}
 
 
 vectorProto.rank = function() {
@@ -660,7 +763,7 @@ vectorProto.rank = function() {
 
 
 /*-----------------------------------------------------------------------------
-* Computations
+* Membership
 */
 
 vectorProto.isIn = function(values) {
@@ -672,10 +775,6 @@ vectorProto.isIn = function(values) {
 
 vectorProto.valueCounts = function() {
   validateVectorIsNotDtype(this, 'object');
-  // TODO
-};
-
-vectorProto.combine = function() {
   // TODO
 };
 
@@ -900,6 +999,371 @@ dateVecProto.dtype = 'date';
 // Public supporting types
 
 
+/*-----------------------------------------------------------------------------
+* Range
+*/
+
+jd.r = function(start, stop, includeStop) {
+  includeStop = isUndefined(includeStop) ? null : includeStop;
+
+  if (includeStop !== null && typeof includeStop !== 'boolean') {
+    throw new Error('"includeStop" must be either true, false, or null');
+  }
+
+  var range = Object.create(rangeProto);
+  range._start = start;
+  range._stop = stop;
+  range._includeStop = includeStop;
+  return range;
+};
+
+
+rangeProto.ex = function() {
+  return jd.ex(this);
+};
+
+
+/*-----------------------------------------------------------------------------
+* RangeCat
+*/
+
+jd.rCat = function() {
+  var numArgs = arguments.length;
+  var args = allocArray(numArgs);
+  for (var i = 0; i < numArgs; i++) {
+    var arg = arguments[i];
+    if (arg.type === 'Exclusion') {
+      throw new Error('rCat must not contain any exclusions');
+    }
+    args[i] = arg;
+  }
+
+  var rangeCat = Object.create(rangeCatProto);
+  rangeCat._selectors = args;
+  return rangeCat;
+};
+
+
+rangeCatProto.ex = function() {
+  return jd.ex(this);
+};
+
+
+/*-----------------------------------------------------------------------------
+* Exclusion
+*/
+
+jd.ex = function(selector) {
+  if (isUndefined(selector)) {
+    throw new Error('"selector" must not be undefined');
+  }
+  var exclusion = Object.create(exclusionProto);
+  exclusion._selector = selector;
+  return exclusion;
+};
+
+
+/*-----------------------------------------------------------------------------
+* Selection logic
+*/
+
+
+var RESOLVE_MODE = {
+  INT: "INT",   // integer indexing
+  COL: "COL", // column selection
+  KEY: "KEY"    // key lookup
+};
+
+
+// Standard row or element indexing
+// 'maxLen' should be the total length to index against.
+// Returns null if all rows/elements should be selected in order.
+function standardIndexing(selector, maxLen) {
+  if (selector === null) {
+    return null;
+  }
+  if (selector.type === 'Exclusion') {
+    var intIdxVector = standardIdxHelper(selector._selector, maxLen);
+    return excludeIntIndices(intIdxVector, maxLen);
+  } else {
+    return standardIdxHelper(selector, maxLen);
+  }
+}
+function standardIdxHelper(selector, maxLen) {
+  if (Array.isArray(selector)) {
+    selector = inferVectorDtype(selector, 'number');
+  }
+
+  // Handle boolean case if applicable
+  var boolIdxResult = attemptBoolIndexing(selector, maxLen);
+  if (!isUndefined(boolIdxResult)) {
+    return boolIdxResult;
+  }
+
+  // Handle integer indexing
+  var opts = resolverOpts(RESOLVE_MODE.INT, maxLen);
+  return resolveSelector(selector, opts);
+}
+
+
+// Column name indexing
+// 'colNames' should be a string vector of column names
+// Returns null if all rows/elements should be selected in order.
+function columnIndexing(selector, colNames, dtypes) {
+  if (selector === null) {
+    return null;
+  }
+  if (selector.type === 'Exclusion') {
+    var intIdxVector = columnIdxHelper(selector._selector, colNames);
+    return excludeIntIndices(intIdxVector, colNames.size());
+  } else {
+    return columnIdxHelper(selector, colNames);
+  }
+}
+function columnIdxHelper(selector, colNames, dtypes) {
+  var maxLen = colNames.size();
+  if (Array.isArray(selector)) {
+    selector = inferVectorDtype(selector, 'string');
+  }
+
+  // Handle boolean case if applicable
+  var boolIdxResult = attemptBoolIndexing(selector, maxLen);
+  if (!isUndefined(boolIdxResult)) {
+    return boolIdxResult;
+  }
+
+  // Handle ByDtype case if applicable
+  // TODO
+
+  // Handle integer index / col name lookup hybrid
+  var opts = resolverOpts(RESOLVE_MODE.COL, maxLen, colNames._getIndex());
+  return resolveSelector(selector, opts);
+}
+
+
+// Perform key lookup indexing
+// 'index' should be an AbstractIndex implementation
+function keyIndexing(selector, maxLen, index) {
+  if (selector.type === 'Exclusion') {
+    var intIdxVector = keyIndexing(selector._selector, maxLen, index);
+    return excludeIntIndices(intIdxVector, maxLen);
+  }
+  var opts = resolverOpts(RESOLVE_MODE.KEY, maxLen, index);
+  return resolveSelector(selector, opts);
+}
+
+
+// Returns the integer indices resulting from excluding the
+// intIdxVector based on the given maxLen
+function excludeIntIndices(intIdxVector, maxLen) {
+  return jd.seq(maxLen).isIn(intIdxVector).not().which();
+}
+
+
+// Performs boolean indexing if 'selector' is a boolean vector
+// of the same length as maxLen.
+// Returns undefined if 'selector' is inappropriate for boolean
+// indexing; returns a vector of integer indices if boolean
+// indexing resolves appropriately.
+function attemptBoolIndexing(selector, maxLen) {
+  if (selector.type === 'Vector' && selector.dtype === 'boolean') {
+    if (selector.size() !== maxLen) {
+      throw new Error('inappropriate boolean indexer length (' +
+        selector.size() + '); expected length to be ' + maxLen);
+    }
+    return selector.which();
+  }
+}
+
+
+// Construct options for resolveSelector().
+// 'resolveMode' should be one of the values in RESOLVE_MODE.
+// 'maxLen' should be the total length to index against.
+// 'index' should be an AbstractIndex implementation if given.
+function resolverOpts(resolveMode, maxLen, index) {
+  index = isUndefined(index) ? null : index;
+  return {
+    resolveMode: resolveMode,
+    maxLen: maxLen,
+    index: index
+  };
+}
+
+
+// Resolve a selector to a vector of integer indices using the 'opts' object
+function resolveSelector(selector, opts) {
+  var resultArr = [];
+  resolveSelectorHelper(selector, opts, resultArr);
+  return newVector(resultArr, 'number');
+}
+// Recursive helper that updates running results in 'resultArr'
+function resolveSelectorHelper(selector, opts, resultArr) {
+  if (typeof selector._resolveSelectorHelper === 'function') {
+    selector._resolveSelectorHelper(opts, resultArr);
+  } else {
+    if (opts.resolveMode === RESOLVE_MODE.KEY && opts.index.arity > 1) {
+      if (!Array.isArray(selector)) {
+        throw new Error('expected compound key for index lookup but got: ' +
+          selector);
+      }
+      selector = newVector(selector, 'object');
+    } else {
+      selector = ensureVector(selector);
+    }
+    selector._resolveSelectorHelper(opts, resultArr);
+  }
+}
+
+
+// Vector selector resolution logic
+vectorProto._resolveSelectorHelper = function(opts, resultArr) {
+  var isNumDtype = (this.dtype === 'number');
+  var isStrDtype = (this.dtype === 'string');
+  var i, intInds;
+  switch (opts.resolveMode) {
+    case RESOLVE_MODE.INT:
+      if (!isNumDtype) {
+        throw new Error('attempted integer indexing using invalid dtype: "' +
+          this.dtype + '"');
+      }
+      for (i = 0; i < this.values.length; i++) {
+        resultArr.push(resolveIntIdx(this.values[i], opts.maxLen));
+      }
+      break;
+    case RESOLVE_MODE.COL:
+      for (i = 0; i < this.values.length; i++) {
+        var currVal = this.values[i];
+        if (isNumDtype || isNumber(currVal)) {
+          resultArr.push(resolveIntIdx(this.values[i], opts.maxLen));
+        } else if (isStrDtype || isString(currVal)) {
+          intInds = opts.index.lookupKey([currVal]);
+          processLookupResults(intInds, currVal, opts, resultArr);
+        } else {
+          throw new Error('expected integer or string selector but got: ' +
+            currVal);
+        }
+      }
+      break;
+    case RESOLVE_MODE.KEY:
+      if (opts.index.arity === 1) {
+        var lookupVectors = [this];
+        for (i = 0; i < this.values.length; i++) {
+          intInds = opts.index.lookup(lookupVectors, i);
+          processLookupResults(intInds, this.values[i], opts, resultArr);
+        }
+      } else {
+        // TODO
+        throw new Error('unimplemented case (TODO)');
+      }
+      break;
+    default:
+      throw new Error('Unrecognized RESOLVE_MODE: ' + opts.resolveMode);
+  }
+};
+
+
+// Range selector resolution logic
+rangeProto._resolveSelectorHelper = function(opts, resultArr) {
+  // Resolve range start first
+  var startIdx = resolveRangeBound(this._start, opts, false);
+  if (startIdx >= opts.maxLen) {
+    return;
+  }
+  // Resolve range stop
+  var stopIdx = resolveRangeBound(this._stop, opts, true, this._includeStop);
+  if (stopIdx <= 0) {
+    return;
+  }
+  // Clip invalid bounds
+  startIdx = (startIdx < 0) ? 0 : startIdx;
+  stopIdx = (stopIdx > opts.maxLen) ? opts.maxLen : stopIdx;
+  // Add all integer indices
+  for (var i = startIdx; i < stopIdx; i++) {
+    resultArr.push(i);
+  }
+};
+// Returns the resolved integer index for the bound
+function resolveRangeBound(bound, opts, isStop, includeStop) {
+  var result;
+  if (isUndefined(bound)) {
+    return isStop ? opts.maxLen : 0;
+  }
+  var useIntIndexing = (
+    opts.resolveMode === RESOLVE_MODE.INT ||
+    (opts.resolveMode === RESOLVE_MODE.COL && typeof bound === 'number')
+  );
+  if (includeStop === null) {
+    includeStop = useIntIndexing ? false : true;
+  }
+  if (useIntIndexing) {
+    result = resolveIntIdx(bound, opts.maxLen, false);
+    return (isStop && includeStop) ? result + 1 : result;
+  } else {
+    if (opts.index.arity === 1) {
+      result = opts.index.lookupKey([bound]);
+      if (result === null) {
+        throw new Error('could not find entry for range bound: ' + bound);
+      } else if (typeof result === 'number') {
+        return (isStop && includeStop) ? result + 1 : result;
+      } else {
+        return (isStop && includeStop) ?
+          result[result.length - 1] + 1 :
+          result[0];
+      }
+    } else {
+      // TODO
+      throw new Error('unimplemented case (TODO)');
+    }
+  }
+}
+
+
+// RangeCat selector resolution logic
+rangeCatProto._resolveSelectorHelper = function(opts, resultArr) {
+  for (var i = 0; i < this._selectors.length; i++) {
+    resolveSelectorHelper(this._selectors[i], opts, resultArr);
+  }
+};
+
+
+// Uses 'maxLen' to compute the integer index for 'inputInt' or
+// throws an error if invalid.  'checkBounds' is true by default
+// but if false, the resulting integer index won't be checked.
+function resolveIntIdx(inputInt, maxLen, checkBounds) {
+  if (isUndefined(checkBounds)) {
+    checkBounds = true;
+  }
+  if (!Number.isInteger(inputInt)) {
+    throw new Error('expected integer selector for integer indexing ' +
+      'but got non-integer: ' + inputInt);
+  }
+  var result = inputInt < 0 ? maxLen + inputInt : inputInt;
+  if (checkBounds && (result < 0 || result >= maxLen)) {
+    throw new Error('integer index out of bounds');
+  }
+  return result;
+}
+
+
+// Processes 'intInds', the result returned from lookup via an AbstractIndex.
+// Results are placed in 'resultArr' if present, or an error is thrown.
+function processLookupResults(intInds, key, opts, resultArr) {
+  if (intInds === null) {
+    if (opts.resolveMode === RESOLVE_MODE.COL) {
+      throw new Error('could not find column named "' + key + '"');
+    } else {
+      throw new Error('could find entry for key: ' + key);
+    }
+  } else if (typeof intInds === 'number') {
+    resultArr.push(intInds);
+  } else {
+    for (j = 0; j < intInds.length; j++) {
+      resultArr.push(intInds[j]);
+    }
+  }
+}
+
+
 /*=============================================================================
 
  # #    # #####  ###### #    # ######  ####
@@ -925,9 +1389,12 @@ dateVecProto.dtype = 'date';
 // properties that a concrete implementation must define:
 // 1. lookup(vectors, i) - a method for looking up the row numbers
 // associated with the row content at index i in the given vectors
-// 2. initVectors - a property containing the array of vectors
+// 2. lookupKey(keyArray) - a method for looking up the row numbers
+// associated with the keyArray, which represents a single compound key
+// 3. initVectors - a property containing the array of vectors
 // originally used to create this index
-// 3. size - a property containing the number of unique keys
+// 4. size - a property containing the number of unique keys
+// 5. arity - a property containing the number of entries in each key
 //
 // So far the only concrete implementation is NestedIndex.
 // Some potential future alternatives:
@@ -967,7 +1434,7 @@ abstractIndexProto.has = function(vectors) {
 // a number vector of corresponding counts.
 abstractIndexProto.valueCounts = function() {
   var initVectors = this.initVectors;
-  var arity = initVectors.length;
+  var arity = this.arity;
   var numKeys = this.size;
   var outputValues = allocArray(arity);
   for (var j = 0; j < arity; j++) {
@@ -1029,7 +1496,6 @@ abstractIndexProto.duplicated = function(keep) {
   }
 
   var initVectors = this.initVectors;
-  var arity = initVectors.length;
   var initNumRows = initVectors[0].size();
   var result = allocArray(initNumRows);
   for (var i = 0; i < initNumRows; i++) {
@@ -1090,6 +1556,8 @@ function newNestedIndex(vectors) {
   var nestedIndex = Object.create(nestedIndexProto);
   nestedIndex.initVectors = vectors;
   nestedIndex.size = 0;
+  nestedIndex.arity = arity;
+  nestedIndex._dtypes = vectors.map(function(v) { return v.dtype; });
   nestedIndex._map = Object.create(null);
 
   // Build index
@@ -1131,11 +1599,29 @@ jd._private_export.newNestedIndex = newNestedIndex;
 
 
 nestedIndexProto.lookup = function(vectors, i) {
-  var arity = this.initVectors.length;
+  var arity = this.arity;
+  var dtypes = this._dtypes;
   var nestedMap = this._map;
   for (var j = 0; j < arity; j++) {
     var currVector = vectors[j];
-    var key = cleanKey(currVector.values[i], currVector.dtype);
+    var key = cleanKey(currVector.values[i], dtypes[j]);
+    nestedMap = nestedMap[key];
+    if (isUndefined(nestedMap)) {
+      return null;
+    }
+  }
+  // The last iteration (j === arity - 1) replaces 'nestedMap' with
+  // the desired row numbers
+  return nestedMap;
+};
+
+
+nestedIndexProto.lookupKey = function(keyArray) {
+  var arity = this.arity;
+  var dtypes = this._dtypes;
+  var nestedMap = this._map;
+  for (var j = 0; j < arity; j++) {
+    var key = cleanKey(keyArray[j], dtypes[j]);
     nestedMap = nestedMap[key];
     if (isUndefined(nestedMap)) {
       return null;
@@ -1271,6 +1757,47 @@ function combineArrays(array1, array2, naValue, func) {
   return result;
 }
 jd._private_export.combineArrays = combineArrays;
+
+
+// Applies 'func' to each tuple of elements from 'arrays', an array of
+// arrays.  The lengths of any arrays that aren't length 1 must be
+// identical.
+function combineMultipleArrays(arrays, func) {
+  if (arrays.length === 0) {
+    throw new Error('cannot combine an empty list of arrays');
+  }
+
+  // Check lengths
+  var numArgs = arrays.length;
+  var isSingle = allocArray(numArgs);
+  var numElems = 1;
+  var j;
+  for (j = 0; j < numArgs; j++) {
+    if (arrays[j].length === 1) {
+      isSingle[j] = true;
+    } else {
+      isSingle[j] = false;
+      if (numElems === 1) {
+        numElems = arrays[j].length;
+      } else if (numElems !== arrays[j].length) {
+        throw new Error('length mismatch: expected ' + numElems +
+          ' elements but found ' + arrays[j].length);
+      }
+    }
+  }
+
+  // Apply func element-wise
+  var resultArray = allocArray(numElems);
+  var argArray = allocArray(numArgs);
+  for (var i = 0; i < numElems; i++) {
+    for (j = 0; j < numArgs; j++) {
+      argArray[j] = isSingle[j] ? arrays[j][0] : arrays[j][i];
+    }
+    resultArray[i] = func.apply(null, argArray);
+  }
+
+  return resultArray;
+}
 
 
 // Applies the given 'func' to reduce each element in 'array', returning
@@ -1494,6 +2021,14 @@ function validateDtype(dtype) {
 }
 
 // Returns undefined or throws an error if invalid
+function validateInt(value, varName) {
+  if (!Number.isInteger(value)) {
+    throw new Error('expected an integer for "' + varName +
+      '" but got: ' + value);
+  }
+}
+
+// Returns undefined or throws an error if invalid
 function validateNonnegInt(value, varName) {
   if (!Number.isInteger(value) || value < 0) {
     throw new Error('"' + varName + '" must be a nonnegative integer');
@@ -1528,6 +2063,28 @@ function validateArrayLengths(len1, len2) {
     }
   }
   return outputLen;
+}
+
+// If value is a vector or array, this function will return the single
+// scalar value contained or throw an error if the length is not 1.
+// If value isn't a vector or array, it is simply returned.
+function ensureScalar(value) {
+  var length = 1;
+  var description = 'a scalar';
+  if (value.type === 'Vector') {
+    length = value.size();
+    value = value.values[0];
+    description = 'a vector';
+  } else if (Array.isArray(value)) {
+    length = value.length;
+    value = value[0];
+    description = 'an array';
+  }
+  if (length !== 1) {
+    throw new Error('expected a single scalar value but got ' +
+      description + ' of length ' + length);
+  }
+  return value;
 }
 
 // Returns a vector representing the given values, which can be either
