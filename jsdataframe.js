@@ -830,6 +830,202 @@ vectorProto._getIndex = function() {
 numVecProto.dtype = 'number';
 
 
+/*-----------------------------------------------------------------------------
+* Operators
+*/
+
+numVecProto.add = function(other) {
+  other = ensureVector(other, 'number');
+  validateVectorIsDtype(other, 'number');
+  var array = combineArrays(this.values, other.values, NaN, numberAdd);
+  return newVector(array, 'number');
+};
+function numberAdd(x, y) {
+  return x + y;
+}
+
+numVecProto.sub = function(other) {
+  other = ensureVector(other, 'number');
+  validateVectorIsDtype(other, 'number');
+  var array = combineArrays(this.values, other.values, NaN, numberSub);
+  return newVector(array, 'number');
+};
+function numberSub(x, y) {
+  return x - y;
+}
+
+numVecProto.mul = function(other) {
+  other = ensureVector(other, 'number');
+  validateVectorIsDtype(other, 'number');
+  var array = combineArrays(this.values, other.values, NaN, numberMul);
+  return newVector(array, 'number');
+};
+function numberMul(x, y) {
+  return x * y;
+}
+
+numVecProto.div = function(other) {
+  other = ensureVector(other, 'number');
+  validateVectorIsDtype(other, 'number');
+  var array = combineArrays(this.values, other.values, NaN, numberDiv);
+  return newVector(array, 'number');
+};
+function numberDiv(x, y) {
+  return x / y;
+}
+
+numVecProto.mod = function(other) {
+  other = ensureVector(other, 'number');
+  validateVectorIsDtype(other, 'number');
+  var array = combineArrays(this.values, other.values, NaN, numberMod);
+  return newVector(array, 'number');
+};
+function numberMod(x, y) {
+  return x % y;
+}
+
+numVecProto.pow = function(other) {
+  other = ensureVector(other, 'number');
+  validateVectorIsDtype(other, 'number');
+  var array = combineArrays(this.values, other.values, NaN, Math.pow);
+  return newVector(array, 'number');
+};
+
+
+/*-----------------------------------------------------------------------------
+* Unary functions
+*/
+
+numVecProto.abs = function() {
+  return newVector(this.values.map(Math.abs), 'number');
+};
+
+numVecProto.sqrt = function() {
+  return newVector(this.values.map(Math.sqrt), 'number');
+};
+
+numVecProto.sign = function() {
+  return newVector(this.values.map(Math.sign), 'number');
+};
+
+numVecProto.ceil = function() {
+  return newVector(this.values.map(Math.ceil), 'number');
+};
+
+numVecProto.floor = function() {
+  return newVector(this.values.map(Math.floor), 'number');
+};
+
+numVecProto.round = function() {
+  return newVector(this.values.map(Math.round), 'number');
+};
+
+numVecProto.exp = function() {
+  return newVector(this.values.map(Math.exp), 'number');
+};
+
+numVecProto.log = function() {
+  return newVector(this.values.map(Math.log), 'number');
+};
+
+numVecProto.sin = function() {
+  return newVector(this.values.map(Math.sin), 'number');
+};
+
+numVecProto.cos = function() {
+  return newVector(this.values.map(Math.cos), 'number');
+};
+
+numVecProto.tan = function() {
+  return newVector(this.values.map(Math.tan), 'number');
+};
+
+numVecProto.asin = function() {
+  return newVector(this.values.map(Math.asin), 'number');
+};
+
+numVecProto.acos = function() {
+  return newVector(this.values.map(Math.acos), 'number');
+};
+
+numVecProto.atan = function() {
+  return newVector(this.values.map(Math.atan), 'number');
+};
+
+
+/*-----------------------------------------------------------------------------
+* Aggregation
+*/
+
+numVecProto.sum = function(skipNa) {
+  if (isUndefined(skipNa)) {
+    skipNa = true;
+  }
+  return skipNa ?
+    reduceNonNa(this.values, 0, numberAdd) :
+    reduceUnless(this.values, 0, isMissing, numberAdd);
+};
+
+
+numVecProto.cuSum = function(skipNa) {
+  if (isUndefined(skipNa)) {
+    skipNa = true;
+  }
+  var array = skipNa ?
+    cumulativeReduce(this.values, numberAdd) :
+    cumulativeReduce(this.values, NA_VALUE.number, numberAdd);
+  return newVector(array, 'number');
+};
+
+
+numVecProto.mean = function(skipNa) {
+  if (isUndefined(skipNa)) {
+    skipNa = true;
+  }
+  var stats = {n: 0, sum: 0.0};
+  var result = skipNa ?
+    reduceNonNa(this.values, stats, meanReducer) :
+    reduceUnless(this.values, stats, isMissing, meanReducer);
+  return (Number.isNaN(result) || result.n === 0) ?
+    NaN :
+    result.sum / result.n;
+};
+function meanReducer(stats, x) {
+  stats.n++;
+  stats.sum += x;
+  return stats;
+}
+
+
+numVecProto.stdev = function(skipNa) {
+  var variance = this.var(skipNa);
+  return Number.isNaN(variance) ? NaN : Math.sqrt(variance);
+};
+
+
+// Implement the "online algorithm" for variance:
+// https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Online_algorithm
+numVecProto.var = function(skipNa) {
+  if (isUndefined(skipNa)) {
+    skipNa = true;
+  }
+  var stats = {n: 0, mean: 0.0, M2: 0.0};
+  var result = skipNa ?
+    reduceNonNa(this.values, stats, varReducer) :
+    reduceUnless(this.values, stats, isMissing, varReducer);
+  return (Number.isNaN(result) || result.n < 2) ?
+    NaN :
+    result.M2 / (result.n - 1);
+};
+function varReducer(stats, x) {
+  stats.n++;
+  var delta = x - stats.mean;
+  stats.mean += delta / stats.n;
+  stats.M2 += delta * (x - stats.mean);
+  return stats;
+}
+
+
 /*=============================================================================
 
  #####   ####   ####  #         #    # ######  ####

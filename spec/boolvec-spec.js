@@ -64,7 +64,7 @@ describe('boolean vector methods:', function() {
   });
 
   describe('boolVec.and', function() {
-    it('performs elementwise boolean "and"', function() {
+    it('performs element-wise boolean "and"', function() {
       expect(p.and(q).values).toEqual(
         [true, false, false, false, null, false, null, false, null]
       );
@@ -72,7 +72,7 @@ describe('boolean vector methods:', function() {
   });
 
   describe('boolVec.or', function() {
-    it('performs elementwise boolean "or"', function() {
+    it('performs element-wise boolean "or"', function() {
       expect(p.or(q).values).toEqual(
         [true, true, true, false, true, null, true, null, null]
       );
@@ -80,7 +80,7 @@ describe('boolean vector methods:', function() {
   });
 
   describe('boolVec.not', function() {
-    it('performs elementwise boolean negation', function() {
+    it('performs element-wise boolean negation', function() {
       expect(r.not().values).toEqual(
         [false, true, null]
       );
@@ -88,7 +88,7 @@ describe('boolean vector methods:', function() {
   });
 
   describe('boolVec.xor', function() {
-    it('performs elementwise boolean "exclusive or"', function() {
+    it('performs element-wise boolean "exclusive or"', function() {
       expect(p.xor(q).values).toEqual(
         [false, true, true, false, null, null, null, null, null]
       );
