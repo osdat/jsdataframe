@@ -37,9 +37,9 @@ describe('vector methods:', function() {
 
     describe('vector.toDtype', function() {
       it('coerces all elements to the requested dtype', function() {
-        var vector = jd.vector([0, 1, 2, NaN]).toDtype('string');
+        var vector = jd.vector([0, 1, 0, 2, NaN]).toDtype('string');
         expect(vector.dtype).toBe('string');
-        expect(vector.values).toEqual(['0', '1', '2', null]);
+        expect(vector.values).toEqual(['0', '1', '0', '2', null]);
       });
 
       it('returns the original vector if the dtype already matches',
@@ -566,6 +566,20 @@ describe('vector methods:', function() {
         var vector = exampleVector.filter(function(x) { return x === null; });
         expect(vector.dtype).toBe('boolean');
         expect(vector.values).toEqual([null, null]);
+      });
+    });
+
+    describe('vector.strJoin', function() {
+      it('behaves as expected', function() {
+        expect(jd.seq(4).strJoin()).toBe('0,1,2,3');
+
+        expect(jd.vector([true, false, null]).strJoin(' '))
+          .toBe('true false null');
+
+        expect(jd.vector([1, NaN, 2]).strJoin('|')).toBe('1|NaN|2');
+
+        expect(jd.seq(1).toDtype('date').strJoin())
+          .toBe('1970-01-01T00:00:00.000Z');
       });
     });
 

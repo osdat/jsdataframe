@@ -140,11 +140,28 @@ jd.vector = function(array, dtype, copyArray) {
 
 jd.seq = function(start, stop, step, includeStop) {
   if (arguments.length === 1) {
+    if (!isNumber(start)) {
+      throw new Error('both "start" and "stop" arguments must be ' +
+        'specified for non-numeric sequences');
+    }
     stop = start;
     start = 0;
+  } else if (inferDtype(start) !== inferDtype(stop)) {
+    throw new Error('"start" and "stop" must have the same dtype');
   }
   step = isUndefined(step) ? 1 : step;
   includeStop = isUndefined(includeStop) ? false : includeStop;
+
+  // Handle character sequence case
+  if (isString(start)) {
+    if (start.length !== 1 || stop.length !== 1) {
+      throw new Error('both "start" and "stop" must be single characters ' +
+        'for character sequences');
+    }
+    var charCodeSeq = jd.seq(start.charCodeAt(0), stop.charCodeAt(0),
+      step, includeStop);
+    return charCodeSeq.map(charCodeToStr);
+  }
 
   // Validate step sign
   if (step === 0) {
@@ -171,13 +188,29 @@ jd.seq = function(start, stop, step, includeStop) {
 
   return newVector(array, 'number');
 };
+function charCodeToStr(charCode) {
+  return String.fromCharCode(charCode);
+}
 
 
-jd.seqOut = function(start, step, lengthOut) {
+jd.seqOut = function(start, lengthOut, step) {
+  if (arguments.length < 3) {
+    step = 1;
+  }
+
   // Validate arguments
-  start = +start;
   step = +step;
   validateNonnegInt(lengthOut, 'lengthOut');
+
+  // Handle character sequence case
+  if (isString(start)) {
+    if (start.length !== 1) {
+      throw new Error('"start" must be a single character ' +
+        'for character sequences');
+    }
+    var charCodeSeq = jd.seqOut(start.charCodeAt(0), lengthOut, step);
+    return charCodeSeq.map(charCodeToStr);
+  }
 
   // Generate sequence
   var array = allocArray(lengthOut);
@@ -260,6 +293,38 @@ jd.repNa = function(times, dtype) {
 };
 
 
+/*-----------------------------------------------------------------------------
+* Concatenation
+*/
+
+jd.strCat = function() {
+  var numArgs = arguments.length;
+  if (numArgs === 0) {
+    throw new Error('"strCat" must be called with at least one argument');
+  }
+
+  var argArrays = allocArray(numArgs);
+  for (var i = 0; i < numArgs; i++) {
+    argArrays[i] = ensureVector(arguments[i]).values;
+  }
+  var internCache = Object.create(null);
+  var resultArr = combineMultipleArrays(argArrays, elemStrCat, internCache);
+  return newVector(resultArr, 'string');
+};
+var elemStrCat = useStringInterning(function() {
+  var argLen = arguments.length;
+  var args = allocArray(argLen);
+  for (var i = 0; i < argLen; i++) {
+    var value = arguments[i];
+    if (isMissing(value)) {
+      return null;
+    }
+    args[i] = elemToString(value);
+  }
+  return args.join('');
+});
+
+
 /*=============================================================================
 
  #    # ######  ####  #####  ####  #####
@@ -306,8 +371,15 @@ vectorProto.toDtype = function(dtype) {
   if (this.dtype === dtype) {
     return this;
   }
+  if (dtype === 'string') {
+    var internCache = Object.create(null);
+    var resultArr = combineMultipleArrays(
+      [this.values], coerceToStrInterned, internCache);
+    return newVector(resultArr, 'string');
+  }
   return jd.vector(this.values, dtype);
 };
+var coerceToStrInterned = useStringInterning(coerceToStr);
 
 
 vectorProto.serialize = function() {
@@ -467,11 +539,6 @@ vectorProto.findIndex = function() {
 };
 
 
-vectorProto.concat = function() {
-  // TODO
-};
-
-
 vectorProto.sort = function(compareFunction) {
   if (isUndefined(compareFunction)) {
     compareFunction = compare;
@@ -492,6 +559,11 @@ vectorProto.reverse = function() {
 vectorProto.filter = function() {
   var array = Array.prototype.filter.apply(this.values, arguments);
   return newVector(array, this.dtype);
+};
+
+
+vectorProto.strJoin = function(separator) {
+  return this.values.map(elemToString).join(separator);
 };
 
 
@@ -1153,6 +1225,258 @@ boolVecProto.which = function() {
 */
 
 strVecProto.dtype = 'string';
+
+
+strVecProto.nChar = function() {
+  var resultArr = mapNonNa(this.values, NA_VALUE.number, strNChar);
+  return newVector(resultArr, 'number');
+};
+function strNChar(str) {
+  return str.length;
+}
+
+
+strVecProto.charAt = function(index) {
+  index = ensureVector(index);
+  var internCache = Object.create(null);
+  var resultArr = combineMultipleArrays(
+    [this.values, index.values], strCharAt, internCache);
+  return newVector(resultArr, 'string');
+};
+var strCharAt = useStringInterning(function(str, index) {
+  if (str === null) {
+    return null;
+  }
+  return str.charAt(index);
+});
+
+
+strVecProto.trim = function() {
+  var internCache = Object.create(null);
+  var resultArr = combineMultipleArrays([this.values], strTrim, internCache);
+  return newVector(resultArr, 'string');
+};
+var strTrim = useStringInterning(function(str) {
+  if (str === null) {
+    return null;
+  }
+  return str.trim();
+});
+
+
+strVecProto.strSlice = function(beginSlice, endSlice) {
+  beginSlice = ensureVector(beginSlice);
+  endSlice = ensureVector(endSlice);
+  var internCache = Object.create(null);
+  var resultArr = combineMultipleArrays(
+    [this.values, beginSlice.values, endSlice.values],
+    elemStrSlice, internCache);
+  return newVector(resultArr, 'string');
+};
+var elemStrSlice = useStringInterning(function(str, begin, end) {
+  if (str === null) {
+    return null;
+  }
+  return str.slice(begin, end);
+});
+
+
+strVecProto.substr = function(start, length) {
+  start = ensureVector(start);
+  length = ensureVector(length);
+  var internCache = Object.create(null);
+  var resultArr = combineMultipleArrays(
+    [this.values, start.values, length.values], elemSubstr, internCache);
+  return newVector(resultArr, 'string');
+};
+var elemSubstr = useStringInterning(function(str, start, length) {
+  if (str === null) {
+    return null;
+  }
+  return str.substr(start, length);
+});
+
+
+strVecProto.strIncludes = function(searchString, position) {
+  searchString = ensureVector(searchString);
+  position = ensureVector(position);
+  var resultArr = combineMultipleArrays(
+    [this.values, searchString.values, position.values], elemStrIncludes);
+  return newVector(resultArr, 'boolean');
+};
+function elemStrIncludes(str, searchString, position) {
+  if (str === null) {
+    return null;
+  }
+  return str.includes(searchString, position);
+}
+
+
+strVecProto.startsWith = function(searchString, position) {
+  searchString = ensureVector(searchString);
+  position = ensureVector(position);
+  var resultArr = combineMultipleArrays(
+    [this.values, searchString.values, position.values], strStartsWith);
+  return newVector(resultArr, 'boolean');
+};
+function strStartsWith(str, searchString, position) {
+  if (str === null) {
+    return null;
+  }
+  return str.startsWith(searchString, position);
+}
+
+
+strVecProto.endsWith = function(searchString, position) {
+  searchString = ensureVector(searchString);
+  position = ensureVector(position);
+  var resultArr = combineMultipleArrays(
+    [this.values, searchString.values, position.values], strEndsWith);
+  return newVector(resultArr, 'boolean');
+};
+function strEndsWith(str, searchString, position) {
+  if (str === null) {
+    return null;
+  }
+  return str.endsWith(searchString, position);
+}
+
+
+strVecProto.strIndexOf = function(searchValue, fromIndex) {
+  searchValue = ensureVector(searchValue);
+  fromIndex = ensureVector(fromIndex);
+  var resultArr = combineMultipleArrays(
+    [this.values, searchValue.values, fromIndex.values], elemStrIndexOf);
+  return newVector(resultArr, 'number');
+};
+function elemStrIndexOf(str, searchValue, fromIndex) {
+  if (str === null) {
+    return NaN;
+  }
+  return str.indexOf(searchValue, fromIndex);
+}
+
+
+strVecProto.strLastIndexOf = function(searchValue, fromIndex) {
+  searchValue = ensureVector(searchValue);
+  fromIndex = ensureVector(fromIndex);
+  var resultArr = combineMultipleArrays(
+    [this.values, searchValue.values, fromIndex.values], elemStrLastIndexOf);
+  return newVector(resultArr, 'number');
+};
+function elemStrLastIndexOf(str, searchValue, fromIndex) {
+  if (str === null) {
+    return NaN;
+  }
+  return str.lastIndexOf(searchValue, fromIndex);
+}
+
+
+strVecProto.regexMatch = function(regexp) {
+  regexp = ensureVector(regexp);
+  var internCache = Object.create(null);
+  var resultArr = combineMultipleArrays(
+    [this.values, regexp.values], elemRegexMatch, internCache);
+  return newVector(resultArr, 'string');
+};
+var elemRegexMatch = useStringInterning(function(str, regexp) {
+  if (str === null) {
+    return null;
+  }
+  var matchResult = str.match(regexp);
+  return (matchResult === null) ? null : matchResult[0];
+});
+
+
+strVecProto.regexSearch = function(regexp) {
+  regexp = ensureVector(regexp);
+  var resultArr = combineMultipleArrays(
+    [this.values, regexp.values], elemRegexSearch);
+  return newVector(resultArr, 'number');
+};
+function elemRegexSearch(str, regexp) {
+  if (str === null) {
+    return NaN;
+  }
+  return str.search(regexp);
+}
+
+
+strVecProto.regexTest = function(regexp) {
+  regexp = ensureVector(regexp);
+  var resultArr = combineMultipleArrays(
+    [this.values, regexp.values], elemRegexTest);
+  return newVector(resultArr, 'boolean');
+};
+function elemRegexTest(str, regexp) {
+  if (regexp === null || str === null) {
+    return null;
+  }
+  return regexp.test(str);
+}
+
+
+strVecProto.strReplace = function(regexp, newSubStr) {
+  regexp = ensureVector(regexp);
+  newSubStr = ensureVector(newSubStr);
+  var internCache = Object.create(null);
+  var resultArr = combineMultipleArrays(
+    [this.values, regexp.values, newSubStr.values],
+    elemStrReplace, internCache);
+  return newVector(resultArr, 'string');
+};
+var elemStrReplace = useStringInterning(function(str, regexp, newSubStr) {
+  if (str === null) {
+    return null;
+  }
+  return str.replace(regexp, newSubStr);
+});
+
+
+strVecProto.toLowerCase = function() {
+  var internCache = Object.create(null);
+  var resultArr = combineMultipleArrays(
+    [this.values], strToLowerCase, internCache);
+  return newVector(resultArr, 'string');
+};
+function strToLowerCase(str) {
+  if (str === null) {
+    return null;
+  }
+  return str.toLowerCase();
+}
+
+
+strVecProto.toUpperCase = function() {
+  var internCache = Object.create(null);
+  var resultArr = combineMultipleArrays(
+    [this.values], strToUpperCase, internCache);
+  return newVector(resultArr, 'string');
+};
+function strToUpperCase(str) {
+  if (str === null) {
+    return null;
+  }
+  return str.toUpperCase();
+}
+
+
+// Helper for transforming a function into a version that performs
+// string interning
+function useStringInterning(func) {
+  return function() {
+    var result = func.apply(null, arguments);
+    if (result === null) {
+      return result;
+    }
+    var internedStr = this[result];
+    if (isUndefined(internedStr)) {
+      this[result] = result;
+      internedStr = result;
+    }
+    return internedStr;
+  };
+}
 
 
 /*=============================================================================
@@ -1957,11 +2281,13 @@ jd._private_export.combineArrays = combineArrays;
 
 // Applies 'func' to each tuple of elements from 'arrays', an array of
 // arrays.  The lengths of any arrays that aren't length 1 must be
-// identical.
-function combineMultipleArrays(arrays, func) {
+// identical.  'thisArg' (default null) is the value to use as "this" when
+// calling func.
+function combineMultipleArrays(arrays, func, thisArg) {
   if (arrays.length === 0) {
     throw new Error('cannot combine an empty list of arrays');
   }
+  thisArg = isUndefined(thisArg) ? null : thisArg;
 
   // Check lengths
   var numArgs = arrays.length;
@@ -1989,7 +2315,7 @@ function combineMultipleArrays(arrays, func) {
     for (j = 0; j < numArgs; j++) {
       argArray[j] = isSingle[j] ? arrays[j][0] : arrays[j][i];
     }
-    resultArray[i] = func.apply(null, argArray);
+    resultArray[i] = func.apply(thisArg, argArray);
   }
 
   return resultArray;
@@ -2151,6 +2477,7 @@ jd._private_export.coerceToBool = coerceToBool;
 function coerceToStr(value) {
   return (
     isMissing(value) ? NA_VALUE.string :
+    typeof value !== 'object' ? value.toString() :
     isDate(value) ? value.toISOString() :
     value.toString()
   );
@@ -2166,6 +2493,18 @@ function coerceToDate(value) {
   return Number.isNaN(result.getTime()) ? null : result;
 }
 jd._private_export.coerceToDate = coerceToDate;
+
+
+// Converts the element into a string (e.g. for printing purposes)
+function elemToString(element) {
+  return (
+    element === null ? 'null' :
+    isUndefined(element) ? 'undefined' :
+    typeof element !== 'object' ? element.toString() :
+    isDate(element) ? element.toISOString() :
+    element.toString()
+  );
+}
 
 
 /*-----------------------------------------------------------------------------
@@ -2380,6 +2719,43 @@ if (!Array.prototype.findIndex) {
       }
     }
     return -1;
+  };
+}
+
+// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/includes
+if (!String.prototype.includes) {
+  String.prototype.includes = function(search, start) {
+    //'use strict';
+    if (typeof start !== 'number') {
+      start = 0;
+    }
+
+    if (start + search.length > this.length) {
+      return false;
+    } else {
+      return this.indexOf(search, start) !== -1;
+    }
+  };
+}
+
+// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/startsWith
+if (!String.prototype.startsWith) {
+    String.prototype.startsWith = function(searchString, position){
+      position = position || 0;
+      return this.substr(position, searchString.length) === searchString;
+  };
+}
+
+// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/endsWith
+if (!String.prototype.endsWith) {
+  String.prototype.endsWith = function(searchString, position) {
+      var subjectString = this.toString();
+      if (typeof position !== 'number' || !isFinite(position) || Math.floor(position) !== position || position > subjectString.length) {
+        position = subjectString.length;
+      }
+      position -= searchString.length;
+      var lastIndex = subjectString.indexOf(searchString, position);
+      return lastIndex !== -1 && lastIndex === position;
   };
 }
 

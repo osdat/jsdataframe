@@ -163,17 +163,17 @@ describe('number vector methods:', function() {
 
     describe('numVec.exp', function() {
       it('behaves as expected', function() {
-        expect(jd.vector([-1, 0, 1, NaN]).exp().values).toEqual(
-          [1/Math.E, 1, Math.E, NaN]
-        );
+        expect(jd.vector([-1, 0, 1, NaN]).exp().equals(
+          jd.vector([1/Math.E, 1, Math.E, NaN])
+        )).toBe(true);
       });
     });
 
     describe('numVec.log', function() {
       it('behaves as expected', function() {
-        expect(jd.vector([1/Math.E, 1, Math.E, NaN]).log().values).toEqual(
-          [-1, 0, 1, NaN]
-        );
+        expect(jd.vector([1/Math.E, 1, Math.E, NaN]).log().equals(
+          jd.vector([-1, 0, 1, NaN])
+        )).toBe(true);
       });
     });
 
