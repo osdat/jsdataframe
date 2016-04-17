@@ -10,7 +10,7 @@ describe('supporting types:', function() {
   describe('range:', function() {
     it('is constructed via jd.r()', function() {
       var range1 = jd.r(5, 10);
-      expect(range1.type).toBe('Range');
+      expect(range1.type).toBe('jsdataframe.Range');
       expect(range1._start).toBe(5);
       expect(range1._stop).toBe(10);
       expect(range1._includeStop).toBe(null);
@@ -33,7 +33,7 @@ describe('supporting types:', function() {
     it('responds to range.ex()', function() {
       var range = jd.r(10, undefined);
       var exclusion = range.ex();
-      expect(exclusion.type).toBe('Exclusion');
+      expect(exclusion.type).toBe('jsdataframe.Exclusion');
     });
   });
 
@@ -41,12 +41,12 @@ describe('supporting types:', function() {
     var rangeCat = jd.rCat([0, 2], jd.r(5, 8), -1);
 
     it('is constructed via jd.rCat()', function() {
-      expect(rangeCat.type).toBe('RangeCat');
+      expect(rangeCat.type).toBe('jsdataframe.RangeCat');
     });
 
     it('responds to rangeCat.ex()', function() {
       var exclusion = rangeCat.ex();
-      expect(exclusion.type).toBe('Exclusion');
+      expect(exclusion.type).toBe('jsdataframe.Exclusion');
     });
 
     it('cannot contain any exclusions', function() {
@@ -59,7 +59,7 @@ describe('supporting types:', function() {
   describe('exclusion:', function() {
     it('can be constructed via jd.ex()', function() {
       var exclusion = jd.ex('unwanted_column');
-      expect(exclusion.type).toBe('Exclusion');
+      expect(exclusion.type).toBe('jsdataframe.Exclusion');
       expect(exclusion._selector).toBe('unwanted_column');
 
       expect(function() {
@@ -69,7 +69,7 @@ describe('supporting types:', function() {
 
     it('can also be constructed via vector.ex()', function() {
       var exclusion = jd.seq(5).ex();
-      expect(exclusion.type).toBe('Exclusion');
+      expect(exclusion.type).toBe('jsdataframe.Exclusion');
     });
   });
 

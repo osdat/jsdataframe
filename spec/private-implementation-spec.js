@@ -329,26 +329,26 @@ describe('private implementation tests:', function() {
 
     it('converts array values into a vector', function() {
       var vector = ensureVector([0, 1, 2]);
-      expect(vector.type).toBe('Vector');
+      expect(vector.type).toBe('jsdataframe.Vector');
       expect(vector.dtype).toBe('number');
       expect(vector.values).toEqual([0, 1, 2]);
     });
 
     it('converts a scalar value as a vector', function() {
       var vector = ensureVector(1);
-      expect(vector.type).toBe('Vector');
+      expect(vector.type).toBe('jsdataframe.Vector');
       expect(vector.dtype).toBe('number');
       expect(vector.values).toEqual([1]);
     });
 
     it('infers the dtype correctly using defaultDtype if needed', function() {
       var vector = ensureVector(null);
-      expect(vector.type).toBe('Vector');
+      expect(vector.type).toBe('jsdataframe.Vector');
       expect(vector.dtype).toBe('object');
       expect(vector.values).toEqual([null]);
 
       var vector2 = ensureVector([null], 'number');
-      expect(vector2.type).toBe('Vector');
+      expect(vector2.type).toBe('jsdataframe.Vector');
       expect(vector2.dtype).toBe('number');
       expect(vector2.values).toEqual([NaN]);
     });

@@ -328,7 +328,402 @@ describe('static functions:', function() {
     });
   });
 
+  describe('data frame creation:', function() {
+    var numVec = jd.seq(5);
+    var strVec = jd.seqOut('a', 5);
+    var colNames = jd.vector(['A', 'B', 'C']);
+    var exampleDf = jd.df([numVec, strVec, 10], colNames);
+
+    describe('jd.df', function() {
+
+      describe('called with an array of columns', function() {
+        it('behaves as expected', function() {
+          var df1 = jd.df([numVec, ['a', 'b', 'c', 'd', 'e'], [10]],
+            colNames);
+          expect(df1.equals(exampleDf)).toBe(true);
+
+          var df2 = jd.df([numVec, strVec, jd.vector([10])], colNames.values);
+          expect(df2.equals(df1)).toBe(true);
+        });
+
+        it('generates column names when "colNames" is undefined', function() {
+          var df = jd.df([numVec, strVec, 10]);
+          expect(df.names().values).toEqual(['c0', 'c1', 'c2']);
+          expect(df.resetNames().equals(exampleDf.resetNames()));
+        });
+
+        it('throws an error if "colNames" is the wrong length', function() {
+          expect(function() {
+            jd.df([numVec, strVec, 10], ['A', 'B']);
+          }).toThrowError(/colNames/);
+        });
+      });
+
+      describe('called with an object containing columns', function() {
+        it('behaves as expected', function() {
+          var colMap = {A: numVec, B: strVec.values, C: 10};
+          var df = jd.df(colMap);
+          expect(df.nCol()).toBe(3);
+          expect(df.c('A').equals(colMap.A)).toBe(true);
+          expect(df.c('B').equals(jd.vector(colMap.B))).toBe(true);
+          expect(df.c('C').equals(jd.rep(10, 5))).toBe(true);
+        });
+
+        it('uses "colNames" to determine the column order', function() {
+          var colMap = {A: numVec, B: strVec.values, C: 10};
+          var colNames2 = ['B', 'C', 'A'];
+          var df = jd.df(colMap, colNames2);
+          expect(df.names().values).toEqual(colNames2);
+
+          var expectedDf = jd.df([strVec, 10, numVec], colNames2);
+          expect(df.equals(expectedDf)).toBe(true);
+        });
+
+        it('throws an error if "colNames" doesn\'t match the column keys',
+          function() {
+            var colMap = {A: numVec, B: strVec.values, C: 10};
+
+            expect(function() {
+              jd.df(colMap, ['A', 'B', 'Z']);
+            }).toThrowError(/colNames/);
+
+            expect(function() {
+              jd.df(colMap, ['A', 'B']);
+            }).toThrowError(/colNames/);
+
+            expect(function() {
+              jd.df(colMap, ['A', 'B', 'C', 'D']);
+            }).toThrowError(/colNames/);
+          }
+        );
+
+        it('throws an error if "colNames" has duplicates', function() {
+          var colMap = {A: numVec, B: strVec.values, C: 10};
+
+          expect(function() {
+            jd.df(colMap, ['A', 'B', 'C', 'A']);
+          }).toThrowError(/duplicate/);
+        });
+
+        it('throws an error if "colNames" has nulls', function() {
+          var colMap = {A: numVec, B: strVec.values, C: 10};
+
+          expect(function() {
+            jd.df(colMap, ['A', 'B', 'C', null]);
+          }).toThrowError(/null/);
+        });
+      });
+
+      it('can be used to create a 1-row data frame', function() {
+        var df = jd.df([0, 'a', 10], colNames);
+        expect(df.nRow()).toBe(1);
+        expect(df.nCol()).toBe(3);
+        expect(df.names().values).toEqual(colNames.values);
+        expect(df.toMatrix()).toEqual([[0, 'a', 10]]);
+      });
+
+      it('can be used to create different empty data frames', function() {
+        var df = jd.df([]);
+        expect(df.nRow()).toBe(0);
+        expect(df.nCol()).toBe(0);
+        expect(df.names().values).toEqual([]);
+
+        var df2 = jd.df([10, []]);
+        expect(df2.nRow()).toBe(0);
+        expect(df2.nCol()).toBe(2);
+      });
+
+      it('throws an error if "columns" has vectors or arrays with ' +
+        'incompatible lengths',
+        function() {
+          expect(function() {
+            jd.df([numVec, jd.seq(4)]);
+          }).toThrowError(/length/);
+
+          expect(function() {
+            jd.df([numVec, jd.vector([])]);
+          }).toThrowError(/length/);
+        }
+      );
+
+      it('throws an error if "columns" is undefined or invalid', function() {
+        expect(function() {
+          jd.df();
+        }).toThrow();
+
+        expect(function() {
+          jd.df('invalid');
+        }).toThrowError(/columns/);
+
+        expect(function() {
+          jd.df(numVec);
+        }).toThrowError(/vector/);
+      });
+    });
+
+    describe('jd.dfFromObjArray', function() {
+      var objArray = [
+        {A: 0, B: 'a', C: 10},
+        {A: 1, B: 'b', C: 10},
+        {A: 2, B: 'c', C: 10},
+        {A: 3, B: 'd', C: 10},
+        {A: 4, B: 'e', C: 10}
+      ];
+
+      it('behaves as expected with "colOrder" undefined', function() {
+        var df = jd.dfFromObjArray(objArray);
+        expect(df.nCol()).toBe(3);
+        expect(df.c('A').equals(jd.seq(5))).toBe(true);
+        expect(df.c('B').equals(jd.seqOut('a', 5))).toBe(true);
+        expect(df.c('C').equals(jd.rep(10, 5))).toBe(true);
+      });
+
+      it('behaves as expected with "colOrder" specified', function() {
+        var df = jd.dfFromObjArray(objArray, colNames);
+        expect(df.equals(exampleDf)).toBe(true);
+
+        var df2 = jd.dfFromObjArray(objArray, ['B', 'C', 'A']);
+        expect(df2.names().values).toEqual(['B', 'C', 'A']);
+        expect(df2.c(0).equals(jd.seqOut('a', 5))).toBe(true);
+        expect(df2.c(1).equals(jd.rep(10, 5))).toBe(true);
+        expect(df2.c(2).equals(jd.seq(5))).toBe(true);
+      });
+
+      it('allows for objects with different sets of properties', function() {
+        var df = jd.dfFromObjArray([
+          {A: 0},
+          {A: 1,  B: 'b'},
+          {B: 'c', C: 10}
+        ]);
+        var expectedDf = jd.df({
+          A: [0, 1, NaN], B: [null, 'b', 'c'], C: [NaN, NaN, 10]
+        }, ['A', 'B', 'C']);
+        expect(df.equals(expectedDf)).toBe(true);
+      });
+
+      it('generates columns for every element of "colOrder" even if ' +
+        'no object has a corresponding property',
+        function() {
+          var df = jd.dfFromObjArray([
+            {A: 0},
+            {A: 1},
+            {A: 2}
+          ], ['A', 'B']);
+          var expectedDf = jd.df([jd.seq(3), jd.repNa(3, 'object')],
+            ['A', 'B']);
+          expect(df.equals(expectedDf)).toBe(true);
+
+          // Test case where objArray is empty
+          var df2 = jd.dfFromObjArray([], ['A', 'B']);
+          expect(df2.nRow()).toBe(0);
+          expect(df2.nCol()).toBe(2);
+          expect(df2.names().values).toEqual(['A', 'B']);
+        }
+      );
+
+      it('ignores properties not in "colOrder" if defined',
+        function() {
+          var df = jd.dfFromObjArray([
+            {A: 0, B: 'a', C: 'ignored'},
+            {A: 1, B: 'b'},
+            {A: 2, B: 'c', D: 'ignored'}
+          ], ['A', 'B']);
+          var expectedDf = jd.df([jd.seq(3), jd.seqOut('a', 3)], ['A', 'B']);
+          expect(df.equals(expectedDf)).toBe(true);
+        }
+      );
+
+      it('throws an error if "objArray" is not an array', function() {
+        expect(function() {
+          jd.dfFromObjArray(jd.seq(5));
+        }).toThrowError(/array/);
+
+        expect(function() {
+          jd.dfFromObjArray({a: 1, b: 2});
+        }).toThrowError(/array/);
+      });
+
+      it('throws an error if "colOrder" has null or duplicate entries',
+        function() {
+          expect(function() {
+            var df = jd.dfFromObjArray([
+              {A: 0},
+              {A: 1},
+              {A: 2}
+            ], ['A', null]);
+          }).toThrowError(/null/);
+
+          expect(function() {
+            var df = jd.dfFromObjArray([
+              {A: 0},
+              {A: 1},
+              {A: 2}
+            ], ['A', 'A']);
+          }).toThrowError(/duplicate/);
+        }
+      );
+    });
+
+    var matrix = [
+      [0, 'a', 10],
+      [1, 'b', 10],
+      [2, 'c', 10],
+      [3, 'd', 10],
+      [4, 'e', 10]
+    ];
+
+    describe('jd.dfFromMatrix', function() {
+      it('behaves as expected in the typical case', function() {
+        var df = jd.dfFromMatrix(matrix, colNames);
+        expect(df.equals(exampleDf)).toBe(true);
+      });
+
+      it('generates column names when "colNames" is undefined', function() {
+        var df = jd.dfFromMatrix(matrix);
+        expect(df.names().values).toEqual(['c0', 'c1', 'c2']);
+        expect(df.resetNames().equals(exampleDf.resetNames()));
+      });
+
+      it('requires all row arrays to be of the same length', function() {
+        expect(function() {
+          jd.dfFromMatrix([
+            [0, 'a'],
+            [1, 'b', null],
+            [2, 'c']
+          ]);
+        }).toThrowError(/row array/);
+      });
+
+      it('throws an error if "colNames" has the wrong length', function() {
+        expect(function() {
+          jd.dfFromMatrix(matrix, ['A', 'B']);
+        }).toThrowError(/colNames/);
+      });
+
+      it('creates a 0-row data frame if "matrix" has length 0', function() {
+        var df = jd.dfFromMatrix([], ['A', 'B']);
+        expect(df.nRow()).toBe(0);
+        expect(df.nCol()).toBe(2);
+        expect(df.names().values).toEqual(['A', 'B']);
+
+        var df2 = jd.dfFromMatrix([]);
+        expect(df2.nRow()).toBe(0);
+        expect(df2.nCol()).toBe(0);
+        expect(df2.names().values).toEqual([]);
+      });
+    });
+
+    describe('jd.dfFromMatrixWithHeader', function() {
+      it('behaves as expected in the typical case', function() {
+        var matrixWithHeader = [colNames.values].concat(matrix);
+        var df = jd.dfFromMatrixWithHeader(matrixWithHeader);
+        expect(df.equals(exampleDf)).toBe(true);
+      });
+
+      it('coerces the header row to string dtype', function() {
+        var df = jd.dfFromMatrixWithHeader([
+          [0, 1],
+          [2, 3],
+          [4, 5]
+        ]);
+        expect(df.nRow()).toBe(2);
+        expect(df.names().values).toEqual(['0', '1']);
+      });
+
+      it('requires all row arrays (including header) to be of the same length',
+        function() {
+          expect(function() {
+            jd.dfFromMatrixWithHeader([
+              ['A', 'B'],
+              [0, 'a'],
+              [1, 'b', null],
+              [2, 'c']
+            ]);
+          }).toThrowError(/row array/);
+
+          expect(function() {
+            jd.dfFromMatrixWithHeader([
+              ['A', 'B', 'C'],
+              [0, 'a'],
+              [1, 'b'],
+              [2, 'c']
+            ]);
+          }).toThrowError(/header/);
+        }
+      );
+
+      it('throws an error if "matrix" has length 0', function() {
+        expect(function() {
+          jd.dfFromMatrixWithHeader([]);
+        }).toThrowError(/0/);
+      });
+
+      it('creates a 0-row data frame if "matrix" has length 1', function() {
+        var df = jd.dfFromMatrixWithHeader([['A', 'B']]);
+        expect(df.nRow()).toBe(0);
+        expect(df.nCol()).toBe(2);
+        expect(df.names().values).toEqual(['A', 'B']);
+      });
+    });
+  });
+
   describe('concatenation:', function() {
+
+    describe('jd.vCat', function() {
+      it('behaves as expected for standard usage', function() {
+        var vector1 = jd.vCat(NaN, jd.seq(3), jd.vector([]), 10,
+          [11, 12, null], []);
+        expect(vector1.dtype).toBe('number');
+        expect(vector1.values).toEqual([NaN, 0, 1, 2, 10, 11, 12, NaN]);
+
+        var vector2 = jd.vCat('a', 'few', undefined, 'words');
+        expect(vector2.dtype).toBe('string');
+        expect(vector2.values).toEqual(['a', 'few', null, 'words']);
+      });
+
+      it('infers dtype "object" for mixed inputs, just like jd.vector',
+        function() {
+          var vector = jd.vCat(1, ['2', true]);
+          expect(vector.dtype).toBe('object');
+          expect(vector.values).toEqual([1, '2', true]);
+        }
+      );
+
+      it('uses the first non-"object" dtype if inference is inconclusive',
+        function() {
+          var vector1 = jd.vCat(null, jd.repNa(2, 'object'),
+            jd.repNa(2, 'boolean'), jd.repNa(3, 'string'));
+          expect(vector1.dtype).toBe('boolean');
+          expect(vector1.values).toEqual(jd.repNa(8, 'object').values);
+
+          var vector2 = jd.vCat(null, jd.repNa(2, 'object'), [null, null]);
+          expect(vector2.dtype).toBe('object');
+          expect(vector2.values).toEqual(jd.repNa(5, 'object').values);
+        }
+      );
+
+      it('creates an empty vector when given no input elements',
+        function() {
+          var vector1 = jd.vCat();
+          expect(vector1.dtype).toBe('object');
+          expect(vector1.values).toEqual([]);
+
+          var vector2 = jd.vCat([], jd.vector([], 'object'), []);
+          expect(vector2.dtype).toBe('object');
+          expect(vector2.values).toEqual([]);
+
+          var vector3 = jd.vCat([], jd.vector([], 'number'), []);
+          expect(vector3.dtype).toBe('number');
+          expect(vector3.values).toEqual([]);
+        }
+      );
+
+      xit('throws an error if any input is a data frame', function() {
+        expect(function() {
+          jd.vCat(1, 2, jd.df([jd.seq(3), jd.seq(3)]));
+        }).toThrowError(/data frame/);
+      });
+    });
 
     describe('jd.strCat', function() {
       it('behaves as expected for standard usage', function() {

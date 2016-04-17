@@ -33,38 +33,38 @@ var jd = exports;
 */
 
 var vectorProto = {};
-vectorProto.type = 'Vector';
+vectorProto.type = 'jsdataframe.Vector';
 var numVecProto = Object.create(vectorProto);
 var boolVecProto = Object.create(vectorProto);
 var strVecProto = Object.create(vectorProto);
 var dateVecProto = Object.create(vectorProto);
 
 var dfProto = {};
-dfProto.type = 'DataFrame';
+dfProto.type = 'jsdataframe.DataFrame';
 
 
 // Supporting types
 
 var rangeProto = {};
-rangeProto.type = 'Range';
+rangeProto.type = 'jsdataframe.Range';
 
 var rangeCatProto = {};
-rangeCatProto.type = 'RangeCat';
+rangeCatProto.type = 'jsdataframe.RangeCat';
 
 var byDtypeProto = {};
-byDtypeProto.type = 'ByDtype';
+byDtypeProto.type = 'jsdataframe.ByDtype';
 
 var exclusionProto = {};
-exclusionProto.type = 'Exclusion';
+exclusionProto.type = 'jsdataframe.Exclusion';
 
 
 // Private helper types
 
 var abstractIndexProto = {};
-abstractIndexProto.type = 'AbstractIndex';
+abstractIndexProto.type = 'jsdataframe.AbstractIndex';
 
 var nestedIndexProto = Object.create(abstractIndexProto);
-nestedIndexProto.type = 'NestedIndex';
+nestedIndexProto.type = 'jsdataframe.NestedIndex';
 
 
 /*-----------------------------------------------------------------------------
@@ -294,8 +294,201 @@ jd.repNa = function(times, dtype) {
 
 
 /*-----------------------------------------------------------------------------
+* DataFrame Creation
+*/
+
+jd.df = function(columns, colNames) {
+  // Standardize 'colNames' argument to string vector if present
+  if (!isUndefined(colNames)) {
+    colNames = ensureStringVector(colNames);
+  }
+
+  // Standardize 'columns' argument to array format
+  var numCols;
+  if (columns.type === vectorProto.type) {
+    throw new Error('"columns" should not itself be a vector');
+  } else if (Array.isArray(columns)) {
+    numCols = columns.length;
+    if (isUndefined(colNames)) {
+      colNames = generateColNames(numCols);
+    } else if (colNames.size() !== numCols) {
+      throw new Error('the length of "colNames" (' + colNames.size() +
+        ') does not match the length of "columns" (' + numCols + ')');
+    }
+  } else if (typeof columns === 'object') {
+    var keys = Object.keys(columns);
+    numCols = keys.length;
+    var colMap = columns;
+    if (isUndefined(colNames)) {
+      colNames = newVector(keys, 'string');
+    } else {
+      if (colNames.isNa().any()) {
+        throw new Error('"colNames" cannot have null entries when ' +
+          '"columns" is an object');
+      } else if (colNames.duplicated().any()) {
+        throw new Error('"colNames" cannot have duplicate entries when ' +
+          '"columns" is an object');
+      } else if (colNames.size() !== numCols ||
+        colNames.isIn(keys).not().any()) {
+          throw new Error('"colNames" must match all the keys in ' +
+            '"columns" if "columns" is an object');
+      }
+    }
+    columns = allocArray(numCols);
+    for (var i = 0; i < numCols; i++) {
+      columns[i] = colMap[colNames.values[i]];
+    }
+  } else {
+    throw new Error('expected "columns" to be an array or object but got: ',
+      columns);
+  }
+
+  return newDataFrame(columns, colNames);
+};
+
+
+jd.dfFromObjArray = function(objArray, colOrder) {
+  if (!Array.isArray(objArray)) {
+    throw new Error('"objArray" must be an array');
+  }
+  var nRow = objArray.length;
+  var definedOrder = true;
+  var j;
+  var columns;
+  if (isUndefined(colOrder)) {
+    colOrder = [];
+    columns = [];
+    definedOrder = false;
+  } else {
+    colOrder = ensureStringVector(colOrder);
+    if (colOrder.isNa().any()) {
+      throw new Error('"colOrder" cannot have null entries');
+    } else if (colOrder.duplicated().any()) {
+      throw new Error('"colOrder" cannot have duplicate entries');
+    }
+    colOrder = colOrder.values;
+    columns = allocArray(colOrder.length);
+    for (j = 0; j < colOrder.length; j++) {
+      columns[j] = allocArray(nRow);
+    }
+  }
+
+  // Populate columns
+  var foundCols = Object.create(null);
+  for (var i = 0; i < nRow; i++) {
+    var rowObj = objArray[i];
+    if (!definedOrder) {
+      var keys = Object.keys(rowObj);
+      for (j = 0; j < keys.length; j++) {
+        var key = keys[j];
+        if (!(key in foundCols)) {
+          colOrder.push(key);
+          var newColArr = allocArray(nRow);
+          for (var k = 0; k < i; k++) {
+            newColArr[k] = null;
+          }
+          columns.push(newColArr);
+          foundCols[key] = key;
+        }
+      }
+    }
+    for (j = 0; j < colOrder.length; j++) {
+      columns[j][i] = rowObj.propertyIsEnumerable(colOrder[j]) ?
+        rowObj[colOrder[j]] : null;
+    }
+  }
+
+  return newDataFrame(columns, newVector(colOrder, 'string'));
+};
+
+
+jd.dfFromMatrix = function(matrix, colNames) {
+  if (!Array.isArray(matrix)) {
+    throw new Error('"matrix" must be an array');
+  }
+  var nCol = matrix.length > 0 ? matrix[0].length : 0;
+  colNames = isUndefined(colNames) ?
+    generateColNames(nCol) :
+    ensureStringVector(colNames);
+  if (nCol > 0 && nCol !== colNames.size()) {
+    throw new Error('"colNames" must have the same length as each ' +
+      'row array');
+  }
+  return dfFromMatrixHelper(matrix, 0, colNames);
+};
+// Forms a data frame using 'matrix' starting with 'startRow' and
+// setting column names to the 'colNames' string vector
+function dfFromMatrixHelper(matrix, startRow, colNames) {
+  var nCol = colNames.size();
+  var nRow = matrix.length - startRow;
+  var columns = allocArray(nCol);
+  var j;
+  for (j = 0; j < nCol; j++) {
+    columns[j] = allocArray(nRow);
+  }
+  for (var i = 0; i < nRow; i++) {
+    var rowArray = matrix[i + startRow];
+    if (rowArray.length !== nCol) {
+      throw new Error('all row arrays must be of the same size');
+    }
+    for (j = 0; j < nCol; j++) {
+      columns[j][i] = rowArray[j];
+    }
+  }
+  return newDataFrame(columns, colNames);
+}
+
+jd.dfFromMatrixWithHeader = function(matrix) {
+  if (!Array.isArray(matrix)) {
+    throw new Error('"matrix" must be an array');
+  } else if (matrix.length === 0) {
+    throw new Error('"matrix" must not have length 0');
+  }
+  var colNames = ensureStringVector(matrix[0]);
+  if (matrix.length > 1 && colNames.size() !== matrix[1].length) {
+    throw new Error('header row must have the same length as other ' +
+      'row arrays');
+  }
+  return dfFromMatrixHelper(matrix, 1, colNames);
+};
+
+
+/*-----------------------------------------------------------------------------
 * Concatenation
 */
+
+jd.vCat = function() {
+  var numArgs = arguments.length;
+
+  // First pass: determine total output length and defaultDtype
+  var vectorArgs = allocArray(numArgs);
+  var defaultDtype = null;
+  var outputLen = 0;
+  for (var i = 0; i < numArgs; i++) {
+    var vector = ensureVector(arguments[i]);
+    if (defaultDtype === null && vector.dtype !== 'object') {
+      defaultDtype = vector.dtype;
+    }
+    outputLen += vector.size();
+    vectorArgs[i] = vector;
+  }
+  defaultDtype = (defaultDtype === null) ? 'object' : defaultDtype;
+
+  // Second pass: populate output array
+  var outputArr = allocArray(outputLen);
+  var index = 0;
+  for (i = 0; i < numArgs; i++) {
+    var argArray = vectorArgs[i].values;
+    var argArrLen = argArray.length;
+    for (var j = 0; j < argArrLen; j++) {
+      outputArr[index] = argArray[j];
+      index++;
+    }
+  }
+
+  return inferVectorDtype(outputArr, defaultDtype);
+};
+
 
 jd.strCat = function() {
   var numArgs = arguments.length;
@@ -351,10 +544,7 @@ vectorProto.size = function() {
 
 vectorProto.copy = function() {
   // TODO
-};
-
-vectorProto.append = function() {
-  // TODO
+  throw new Error('unimplemented method (TODO)');
 };
 
 
@@ -384,6 +574,7 @@ var coerceToStrInterned = useStringInterning(coerceToStr);
 
 vectorProto.serialize = function() {
   // TODO
+  throw new Error('unimplemented method (TODO)');
 };
 
 
@@ -658,11 +849,12 @@ vectorProto.gte = function(other) {
 
 vectorProto.between = function(lower, upper, inclusive) {
   // TODO
+  throw new Error('unimplemented method (TODO)');
 };
 
 
 vectorProto.equals = function(other, tolerance) {
-  if (isMissing(other) || other.type !== 'Vector' ||
+  if (isMissing(other) || other.type !== vectorProto.type ||
     this.size() !== other.size() || this.dtype !== other.dtype) {
     return false;
   }
@@ -831,6 +1023,7 @@ function elemClip(elem, lower, upper) {
 
 vectorProto.rank = function() {
   // TODO
+  throw new Error('unimplemented method (TODO)');
 };
 
 
@@ -848,6 +1041,7 @@ vectorProto.isIn = function(values) {
 vectorProto.valueCounts = function() {
   validateVectorIsNotDtype(this, 'object');
   // TODO
+  throw new Error('unimplemented method (TODO)');
 };
 
 vectorProto.unique = function() {
@@ -867,14 +1061,17 @@ vectorProto.duplicated = function(keep) {
 
 vectorProto.intersect = function() {
   // TODO
+  throw new Error('unimplemented method (TODO)');
 };
 
 vectorProto.replace = function() {
   // TODO
+  throw new Error('unimplemented method (TODO)');
 };
 
 vectorProto.describe = function() {
   // TODO
+  throw new Error('unimplemented method (TODO)');
 };
 
 
@@ -1504,6 +1701,143 @@ dateVecProto.dtype = 'date';
 
 */
 
+/*-----------------------------------------------------------------------------
+* Preliminaries
+*/
+
+dfProto.nRow = function() {
+  return this._cols.length === 0 ?
+    0 :
+    this._cols[0].values.length;
+};
+
+
+dfProto.nCol = function() {
+  return this._cols.length;
+};
+
+
+dfProto.dtypes = function() {
+  return jd.df([this.names(), this._dtypesVector()], ['colName', 'dtype']);
+};
+// Returns the dtypes as a string vector
+dfProto._dtypesVector = function() {
+  return newVector(this._cols.map(function(v) { return v.dtype; }), 'string');
+};
+
+
+dfProto.colVectors = function(asObject) {
+  asObject = isUndefined(asObject) ? false : asObject;
+  if (asObject) {
+    var colNameArr = this._names.dropNa().unique().values;
+    var colIdx = colNameArr.map(function(colName) {
+      return singleColNameLookup(colName, this._names);
+    }, this);
+    var result = Object.create(null);
+    colIdx.forEach(function(colInd, i) {
+      var key = colNameArr[i];
+      result[key] = this._cols[colInd];
+    }, this);
+    return result;
+  } else {
+    return this._cols.slice();
+  }
+};
+
+
+dfProto.equals = function(other, tolerance) {
+  if (other === null || isUndefined(other) ||
+    other.type !== dfProto.type || !other.names().equals(this.names())) {
+    return false;
+  }
+  var nCol = this.nCol();
+  for (var i = 0; i < nCol; i++) {
+    if (!other._cols[i].equals(this._cols[i], tolerance)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+
+/*-----------------------------------------------------------------------------
+* Conversion
+*/
+
+dfProto.toObjArray = function() {
+  var colNameArr = this._names.dropNa().unique().values;
+  var colIdx = colNameArr.map(function(colName) {
+    return singleColNameLookup(colName, this._names);
+  }, this);
+  var nRow = this.nRow();
+  var numColsUsed = colNameArr.length;
+  var objArray = allocArray(nRow);
+  for (var i = 0; i < nRow; i++) {
+    var rowObj = Object.create(null);
+    for (var j = 0; j < numColsUsed; j++) {
+      rowObj[colNameArr[j]] = this._cols[colIdx[j]].values[i];
+    }
+    objArray[i] = rowObj;
+  }
+  return objArray;
+};
+
+
+dfProto.toMatrix = function(includeHeader) {
+  includeHeader = isUndefined(includeHeader) ? false : includeHeader;
+  var offset = includeHeader ? 1 : 0;
+  var nRow = this.nRow();
+  var matrix = allocArray(nRow + offset);
+  if (includeHeader) {
+    matrix[0] = this._names.values;
+  }
+  var nCol = this.nCol();
+  for (var i = 0; i < nRow; i++) {
+    var rowArray = allocArray(nCol);
+    for (var j = 0; j < nCol; j++) {
+      rowArray[j] = this._cols[j].values[i];
+    }
+    matrix[i + offset] = rowArray;
+  }
+  return matrix;
+};
+
+
+/*-----------------------------------------------------------------------------
+* Column Names
+*/
+
+dfProto.names = function() {
+  return this._names;
+};
+
+
+dfProto.setNames = function(names) {
+  // TODO
+  throw new Error('unimplemented method (TODO)');
+};
+
+
+dfProto.rename = function(nameMap) {
+  // TODO
+  throw new Error('unimplemented method (TODO)');
+};
+
+
+dfProto.resetNames = function() {
+  return newDataFrame(this._cols, generateColNames(this._cols.length), false);
+};
+
+
+/*-----------------------------------------------------------------------------
+* Subset Selection / Modification
+*/
+
+dfProto.c = function(colSelect) {
+  var intIdx = singleColNameLookup(colSelect, this._names);
+  return this._cols[intIdx];
+};
+
 
 /*=============================================================================
 
@@ -1552,7 +1886,7 @@ jd.rCat = function() {
   var args = allocArray(numArgs);
   for (var i = 0; i < numArgs; i++) {
     var arg = arguments[i];
-    if (arg.type === 'Exclusion') {
+    if (arg.type === exclusionProto.type) {
       throw new Error('rCat must not contain any exclusions');
     }
     args[i] = arg;
@@ -1602,7 +1936,7 @@ function standardIndexing(selector, maxLen) {
   if (selector === null) {
     return null;
   }
-  if (selector.type === 'Exclusion') {
+  if (selector.type === exclusionProto.type) {
     var intIdxVector = standardIdxHelper(selector._selector, maxLen);
     return excludeIntIndices(intIdxVector, maxLen);
   } else {
@@ -1633,7 +1967,7 @@ function columnIndexing(selector, colNames, dtypes) {
   if (selector === null) {
     return null;
   }
-  if (selector.type === 'Exclusion') {
+  if (selector.type === exclusionProto.type) {
     var intIdxVector = columnIdxHelper(selector._selector, colNames);
     return excludeIntIndices(intIdxVector, colNames.size());
   } else {
@@ -1664,7 +1998,7 @@ function columnIdxHelper(selector, colNames, dtypes) {
 // Perform key lookup indexing
 // 'index' should be an AbstractIndex implementation
 function keyIndexing(selector, maxLen, index) {
-  if (selector.type === 'Exclusion') {
+  if (selector.type === exclusionProto.type) {
     var intIdxVector = keyIndexing(selector._selector, maxLen, index);
     return excludeIntIndices(intIdxVector, maxLen);
   }
@@ -1686,7 +2020,7 @@ function excludeIntIndices(intIdxVector, maxLen) {
 // indexing; returns a vector of integer indices if boolean
 // indexing resolves appropriately.
 function attemptBoolIndexing(selector, maxLen) {
-  if (selector.type === 'Vector' && selector.dtype === 'boolean') {
+  if (selector.type === vectorProto.type && selector.dtype === 'boolean') {
     if (selector.size() !== maxLen) {
       throw new Error('inappropriate boolean indexer length (' +
         selector.size() + '); expected length to be ' + maxLen);
@@ -1877,9 +2211,35 @@ function processLookupResults(intInds, key, opts, resultArr) {
   } else if (typeof intInds === 'number') {
     resultArr.push(intInds);
   } else {
-    for (j = 0; j < intInds.length; j++) {
+    for (var j = 0; j < intInds.length; j++) {
       resultArr.push(intInds[j]);
     }
+  }
+}
+
+
+// Returns the integer index of the first occurrence of a single column
+// name or throws an error if 'selector' is invalid or no occurrence is found.
+// 'selector' can be a single integer or string expressed as a scalar,
+// array, or vector.  'colNames' must be a string vector1
+function singleColNameLookup(selector, colNames) {
+  if (isUndefined(selector)) {
+    throw new Error('selector must not be undefined');
+  }
+  selector = ensureScalar(selector);
+  if (isNumber(selector)) {
+    return resolveIntIdx(selector, colNames.values.length);
+  } else if (isString(selector) || selector === null) {
+    var intInds = colNames._getIndex().lookupKey([selector]);
+    if (intInds === null) {
+      throw new Error('invalid column name: ' + selector);
+    } else if (typeof intInds !== 'number') {
+      // must be an array, so use the first element
+      intInds = intInds[0];
+    }
+    return intInds;
+  } else {
+    throw new Error('column selector must be an integer or string');
   }
 }
 
@@ -2366,6 +2726,77 @@ function cumulativeReduce(array, naValue, func) {
 
 
 /*-----------------------------------------------------------------------------
+* DataFrame helpers
+*/
+
+// Returns a string vector of length 'numCols' with default column names
+function generateColNames(numCols) {
+  return jd.strCat('c', jd.seq(numCols));
+}
+
+// Creates a new data frame with the given 'columns' array and 'colNames'
+// string vector.  If "validateCols" is true (the default), every element
+// in 'columns' is explicitly converted to a vector and consistency of
+// resulting lengths is checked, expanding length-1 vectors if necessary.
+// Otherwise, 'columns' is assumed to already contain vectors all of the
+// same length
+function newDataFrame(columns, colNames, validateCols) {
+  var i;
+  var nCol = columns.length;
+
+  validateCols = isUndefined(validateCols) ? true : validateCols;
+  if (validateCols) {
+    columns = columns.map(function(v) { return ensureVector(v); });
+    var nRow = 1;
+    for (i = 0; i < nCol; i++) {
+      var colLen = columns[i].values.length;
+      if (colLen !== 1) {
+        if (nRow === 1) {
+          nRow = colLen;
+        } else if (colLen !== nRow) {
+          throw new Error('incompatible column lengths found during ' +
+            'data frame construction');
+        }
+      }
+    }
+    // Expand any length-1 vectors if necessary
+    if (nRow !== 1) {
+      for (i = 0; i < nCol; i++) {
+        if (columns[i].values.length === 1) {
+          var value = columns[i].values[0];
+          var newArray = allocArray(nRow);
+          for (var j = 0; j < nRow; j++) {
+            newArray[j] = value;
+          }
+          columns[i] = newVector(newArray, columns[i].dtype);
+        }
+      }
+    }
+  }
+
+  // Figure out allDtype
+  var allDtype = null;
+  if (nCol > 0) {
+    allDtype = columns[0].dtype;
+    for (i = 1; i < nCol; i++) {
+      if (columns[i].dtype !== allDtype) {
+        allDtype = null;
+        break;
+      }
+    }
+  }
+
+  // Create data frame
+  var df = Object.create(dfProto);
+  df._cols = columns;
+  df._names = colNames;
+  df.allDtype = allDtype;
+
+  return df;
+}
+
+
+/*-----------------------------------------------------------------------------
 * Dtype helpers
 */
 
@@ -2612,9 +3043,12 @@ function validateArrayLengths(len1, len2) {
 // scalar value contained or throw an error if the length is not 1.
 // If value isn't a vector or array, it is simply returned.
 function ensureScalar(value) {
+  if (isUndefined(value) || value === null) {
+    return value;
+  }
   var length = 1;
   var description = 'a scalar';
-  if (value.type === 'Vector') {
+  if (value.type === vectorProto.type) {
     length = value.size();
     value = value.values[0];
     description = 'a vector';
@@ -2638,7 +3072,7 @@ function ensureScalar(value) {
 // The defaultDtype is used only if all values are missing.  It defaults
 // to 'object' if undefined.
 function ensureVector(values, defaultDtype) {
-  if (isMissing(values) || values.type !== 'Vector') {
+  if (isMissing(values) || values.type !== vectorProto.type) {
     values = Array.isArray(values) ?
       inferVectorDtype(values.slice(), defaultDtype) :
       inferVectorDtype([values], defaultDtype);
@@ -2646,6 +3080,14 @@ function ensureVector(values, defaultDtype) {
   return values;
 }
 jd._private_export.ensureVector = ensureVector;
+
+// Like 'ensureVector', but converts the result to 'string' dtype if necessary
+function ensureStringVector(values) {
+  values = ensureVector(values, 'string');
+  return (values.dtype !== 'string') ?
+    values.toDtype('string') :
+    values;
+}
 
 
 /*-----------------------------------------------------------------------------
