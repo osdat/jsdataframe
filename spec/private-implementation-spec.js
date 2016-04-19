@@ -363,4 +363,39 @@ describe('private implementation tests:', function() {
     });
   });
 
+  describe('printing support', function() {
+
+    describe('toPrintString', function() {
+      var toPrintString = jd._private_export.toPrintString;
+
+      it('converts a value to a print-friendly string', function() {
+        expect(toPrintString('some string')).toBe('some string');
+        expect(toPrintString(undefined)).toBe('undefined');
+        expect(toPrintString(null)).toBe('null');
+        expect(toPrintString(NaN)).toBe('NaN');
+        expect(toPrintString(true)).toBe('true');
+
+        var multiLineString = 'first line\nsecond line\nthird line';
+        expect(toPrintString(multiLineString)).toBe('first line...');
+
+        var longString = jd.rep('9', 500).strJoin('');
+        var shortened = toPrintString(longString);
+        expect(shortened.length).toBe(45);
+        expect(shortened).toMatch(/^9+[.]{3}$/);
+      });
+    });
+
+    describe('fractionDigits', function() {
+      var fractionDigits = jd._private_export.fractionDigits;
+
+      it('returns the number of fractional digits in a number', function() {
+        expect(fractionDigits(-10)).toBe(0);
+        expect(fractionDigits(0)).toBe(0);
+        expect(fractionDigits(1.5)).toBe(1);
+        expect(fractionDigits(-1000.12345)).toBe(5);
+        expect(fractionDigits(NaN)).toBe(0);
+      });
+    });
+  });
+
 });

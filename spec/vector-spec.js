@@ -16,6 +16,20 @@ describe('vector methods:', function() {
         expect(jd.vector([]).size()).toBe(0);
       });
     });
+
+    describe('vector.toString', function() {
+      it('provides a customized description of the vector', function() {
+        expect(jd.seq(5).toString()).toBe(
+          'Vector[dtype:number, size:5]'
+        );
+        expect(jd.seqOut('A', 26).toString()).toBe(
+          'Vector[dtype:string, size:26]'
+        );
+        expect(jd.vector([]).toString()).toBe(
+          'Vector[dtype:object, size:0]'
+        );
+      });
+    });
   });
 
   describe('conversion:', function() {
@@ -1049,11 +1063,60 @@ describe('vector methods:', function() {
         objVec.isIn([1, 2]);
       }).toThrowError(/"object"/);
 
-      var methods = ['valueCounts', 'unique', 'nUnique', 'duplicated'];
+      var methods = [
+        'contains', 'valueCounts', 'unique', 'nUnique', 'duplicated'
+      ];
       methods.forEach(function(method) {
         expect(function() {
           objVec[method]();
         }).toThrowError(/"object"/);
+      });
+    });
+
+    describe('vector.contains', function() {
+      it('behaves as expected for the typical case', function() {
+        expect(numVec.contains(2)).toBe(true);
+        expect(numVec.contains(-1)).toBe(false);
+        expect(numVec.contains(NaN)).toBe(true);
+
+        expect(numVec.contains([2])).toBe(true);
+        expect(numVec.contains(jd.vector([2]))).toBe(true);
+
+        expect(dateVec.contains(new Date(2))).toBe(true);
+        expect(dateVec.contains(new Date(10))).toBe(false);
+        expect(dateVec.contains(null)).toBe(true);
+
+        expect(strVec.contains('2')).toBe(true);
+        expect(strVec.contains('test')).toBe(false);
+        expect(strVec.contains(null)).toBe(true);
+      });
+
+      it('throws an error if "values" doesn\'t match the dtype', function() {
+        expect(function() {
+          numVec.contains('2');
+        }).toThrowError(/dtype/);
+
+        expect(function() {
+          strVec.contains(2);
+        }).toThrowError(/dtype/);
+
+        expect(function() {
+          dateVec.contains(2);
+        }).toThrowError(/dtype/);
+      });
+
+      it('throws an error if "values" is not a scalar', function() {
+        expect(function() {
+          numVec.contains([1, 2]);
+        }).toThrowError(/scalar/);
+
+        expect(function() {
+          numVec.contains(jd.seq(2));
+        }).toThrowError(/scalar/);
+
+        expect(function() {
+          numVec.contains(jd.vector([]));
+        }).toThrowError(/scalar/);
       });
     });
 
@@ -1087,6 +1150,40 @@ describe('vector methods:', function() {
           }).toThrowError(/dtype/);
         }
       );
+    });
+
+    describe('vector.valueCounts', function() {
+      xit('sorts results by decreasing count', function() {
+        var expectedDf1 = jd.dfFromMatrixWithHeader([
+          ['value', 'count'],
+          [NaN, 4],
+          [2, 3],
+          [1, 2],
+          [0, 1],
+        ]);
+        expect(numVec.valueCounts().equals(expectedDf1)).toBe(true);
+
+        var expectedDf2 = jd.dfFromMatrixWithHeader([
+          ['value', 'count'],
+          [null, 4],
+          ['2', 3],
+          ['1', 2],
+          ['0', 1],
+        ]);
+        expect(strVec.valueCounts().equals(expectedDf2)).toBe(true);
+      });
+
+      xit('resolves ties by sorting values ascending', function() {
+        var vector = jd.vector(['a', 'c', 'b', 'b', 'a', 'c', 'd']);
+        var expectedDf = jd.dfFromMatrixWithHeader([
+          ['value', 'count'],
+          ['a', 2],
+          ['b', 2],
+          ['c', 2],
+          ['d', 1],
+        ]);
+        expect(vector.valueCounts().equals(expectedDf)).toBe(true);
+      });
     });
 
     describe('vector.unique', function() {

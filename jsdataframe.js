@@ -518,6 +518,221 @@ var elemStrCat = useStringInterning(function() {
 });
 
 
+/*-----------------------------------------------------------------------------
+* Printing
+*/
+
+// Constants
+var _MIN_MAX_WIDTH = 55;
+var _MIN_MAX_LINES = 4;
+var _MAX_STR_WIDTH = 45;
+var _FIXED_NUM_DIGITS = 6;
+var _EXP_FRAC_DIGITS = 6;
+var _NUM_FIXED_LOWER_BOUND = Math.pow(10, 1 - _FIXED_NUM_DIGITS);
+var _NUM_FIXED_UPPER_BOUND = 1e7 - 1e-9;
+var _PRINT_SEP = '  ';
+var _SKIP_MARKER = '..';
+var _ROW_ID_SUFFIX = ':';
+
+
+jd.printingOpts = {};
+
+jd.printingOpts._maxWidth = 79;
+jd.printingOpts._maxLines = 10;
+
+jd.printingOpts._printCallback = function(stringToPrint) {
+  console.log(stringToPrint);
+};
+
+
+jd.printingOpts.getMaxWidth = function() {
+  return this._maxWidth;
+};
+
+jd.printingOpts.setMaxWidth = function(maxWidth) {
+  validatePrintMax(maxWidth, _MIN_MAX_WIDTH, 'maxWidth');
+  this._maxWidth = maxWidth;
+};
+
+jd.printingOpts.getMaxLines = function() {
+  return this._maxLines;
+};
+
+jd.printingOpts.setMaxLines = function(maxLines) {
+  validatePrintMax(maxLines, _MIN_MAX_LINES, 'maxLines');
+  this._maxLines = maxLines;
+};
+
+jd.printingOpts.setPrintFunction = function(callback) {
+  if (typeof callback !== 'function') {
+    throw new Error('"callback" must be a function');
+  }
+  this._printCallback = callback;
+};
+
+
+vectorProto.p = function(maxLines) {
+  var printStr = this.printToString(maxLines);
+  jd.printingOpts._printCallback(printStr);
+};
+
+vectorProto.printToString = function(maxLines) {
+  if (isUndefined(maxLines)) {
+    maxLines = jd.printingOpts._maxLines;
+  } else {
+    validatePrintMax(maxLines, _MIN_MAX_LINES, 'maxLines');
+  }
+
+  var rowIds = rightAlign(makeRowIds(this.values.length, maxLines));
+  var printVector = rightAlign(this._toTruncatedPrintVector(maxLines));
+  var printLines = jd.strCat(rowIds, _PRINT_SEP, printVector);
+  return this.toString() + '\n' + printLines.strJoin('\n');
+};
+
+dfProto.p = function(maxLines) {
+  var printStr = this.printToString(maxLines);
+  jd.printingOpts._printCallback(printStr);
+};
+
+dfProto.printToString = function(maxLines) {
+  if (isUndefined(maxLines)) {
+    maxLines = jd.printingOpts._maxLines;
+  } else {
+    validatePrintMax(maxLines, _MIN_MAX_LINES, 'maxLines');
+  }
+
+  var rowIds = rightAlign(jd.vCat('',
+    makeRowIds(this.nRow(), maxLines)));
+  var printVectors = [rowIds];
+  var colIdx = 0;
+  var totalWidth = rowIds.at(0).length;
+  var stopWidth = jd.printingOpts._maxWidth - _SKIP_MARKER.length -
+    _PRINT_SEP.length;
+  while (totalWidth <= stopWidth && colIdx < this.nCol()) {
+    var colVec = this._cols[colIdx]._toTruncatedPrintVector(maxLines);
+    var printVec = rightAlign(jd.vCat(
+      toPrintString(this._names.at(colIdx)),
+      colVec));
+    printVectors.push(_PRINT_SEP);
+    printVectors.push(printVec);
+    totalWidth += _PRINT_SEP.length + printVec.at(0).length;
+    colIdx++;
+  }
+  if (totalWidth > stopWidth) {
+    printVectors.pop();
+    printVectors.push(_SKIP_MARKER);
+  }
+
+  var printLines = jd.strCat.apply(jd, printVectors);
+  return this.toString() + '\n' + printLines.strJoin('\n');
+};
+
+
+// Helper for converting a vector to a string vector of printable
+// elements, truncating if the number of elements is more than 'maxLines'
+vectorProto._toTruncatedPrintVector = function(maxLines) {
+  if (this.values.length > maxLines) {
+    var halfCount = Math.ceil(maxLines / 2 - 1);
+    var headRange = jd.r(0, halfCount);
+    var tailRange = jd.r(-halfCount);
+    var printVec = this.s(jd.rCat(headRange, tailRange))._toPrintVector();
+    return jd.vCat(printVec.s(headRange), _SKIP_MARKER, printVec.s(tailRange));
+  } else {
+    return this._toPrintVector();
+  }
+};
+
+// Helper for converting each element to a printable string
+vectorProto._toPrintVector = function() {
+  return this.map(toPrintString);
+};
+
+// Helper for converting each element to a printable string
+numVecProto._toPrintVector = function() {
+  if (this.values.some(numIsBelowFixedThreshold) ||
+    this.values.some(numIsAboveFixedThreshold)) {
+
+    return this.map(function(num) {
+      return num.toExponential(_EXP_FRAC_DIGITS);
+    });
+  } else {
+    var fracDigits = Math.min(_FIXED_NUM_DIGITS,
+      this.map(fractionDigits).max());
+    return this.map(function(num) {
+      return num.toFixed(fracDigits);
+    });
+  }
+};
+function numIsBelowFixedThreshold(num) {
+  return num !== 0 && Math.abs(num) < _NUM_FIXED_LOWER_BOUND;
+}
+function numIsAboveFixedThreshold(num) {
+  return Math.abs(num) > _NUM_FIXED_UPPER_BOUND;
+}
+
+
+// Helper for right-aligning every element in a string vector,
+// padding with spaces so all elements are the same width
+function rightAlign(strVec) {
+  var maxWidth = strVec.nChar().max();
+  var padding = jd.rep(' ', maxWidth).strJoin('');
+  return strVec.map(function(str) {
+    return (padding + str).slice(-padding.length);
+  });
+}
+
+// Helper to create column of row ids for printing
+function makeRowIds(numRows, maxLines) {
+  var printVec = jd.seq(numRows)._toTruncatedPrintVector(maxLines);
+  return printVec.map(function(str) {
+    return str === _SKIP_MARKER ? str : str + _ROW_ID_SUFFIX;
+  });
+}
+
+// Helper for converting a value to a printable string
+function toPrintString(value) {
+  if (isUndefined(value)) {
+    return 'undefined';
+  } else if (value === null) {
+    return 'null';
+  } else if (Number.isNaN(value)) {
+    return 'NaN';
+  } else {
+    var str = coerceToStr(value);
+    var lines = str.split('\n', 2);
+    if (lines.length > 1) {
+      str = lines[0] + '...';
+    }
+    if (str.length > _MAX_STR_WIDTH) {
+      str = str.slice(0, _MAX_STR_WIDTH - 3) + '...';
+    }
+    return str;
+  }
+}
+jd._private_export.toPrintString = toPrintString;
+
+// Helper to validate a candidate print maximum
+function validatePrintMax(candidate, lowerBound, label) {
+  if (typeof candidate !== 'number' || Number.isNaN(candidate)) {
+    throw new Error('"' + label + '" must be a number');
+  } else if (candidate < lowerBound) {
+    throw new Error('"' + label + '" too small');
+  }
+}
+
+// Helper for retrieving the number of digits after the decimal point for
+// the given number.
+// This function doesn't work for numbers represented in scientific
+// notation, but such numbers will trigger different printing logic anyway.
+function fractionDigits(number) {
+  var splitArr = number.toString().split('.');
+  return (splitArr.length > 1) ?
+    splitArr[1].length :
+    0;
+}
+jd._private_export.fractionDigits = fractionDigits;
+
+
 /*=============================================================================
 
  #    # ######  ####  #####  ####  #####
@@ -542,9 +757,9 @@ vectorProto.size = function() {
   return this.values.length;
 };
 
-vectorProto.copy = function() {
-  // TODO
-  throw new Error('unimplemented method (TODO)');
+vectorProto.toString = function() {
+  return 'Vector[dtype:' + this.dtype +
+    ', size:' + this.values.length + ']';
 };
 
 
@@ -1031,6 +1246,16 @@ vectorProto.rank = function() {
 * Membership
 */
 
+vectorProto.contains = function(value) {
+  validateVectorIsNotDtype(this, 'object');
+  value = ensureScalar(value);
+  var valDtype = inferDtype(value);
+  if (valDtype !== this.dtype && valDtype !== null) {
+    throw new Error('"value" does not match the dtype of this vector');
+  }
+  return this._getIndex().lookupKey([value]) !== null;
+};
+
 vectorProto.isIn = function(values) {
   validateVectorIsNotDtype(this, 'object');
   values = ensureVector(values, this.dtype);
@@ -1040,7 +1265,10 @@ vectorProto.isIn = function(values) {
 
 vectorProto.valueCounts = function() {
   validateVectorIsNotDtype(this, 'object');
-  // TODO
+  var valCountObj = this._getIndex().valueCounts();
+  var df = jd.df([valCountObj.vectors[0], valCountObj.counts],
+    ['value', 'count']);
+  // TODO sort by count desc then value asc
   throw new Error('unimplemented method (TODO)');
 };
 
@@ -1726,22 +1954,22 @@ dfProto._dtypesVector = function() {
 };
 
 
-dfProto.colVectors = function(asObject) {
-  asObject = isUndefined(asObject) ? false : asObject;
-  if (asObject) {
-    var colNameArr = this._names.dropNa().unique().values;
-    var colIdx = colNameArr.map(function(colName) {
-      return singleColNameLookup(colName, this._names);
-    }, this);
-    var result = Object.create(null);
-    colIdx.forEach(function(colInd, i) {
-      var key = colNameArr[i];
-      result[key] = this._cols[colInd];
-    }, this);
-    return result;
-  } else {
+dfProto.colArray = function() {
     return this._cols.slice();
-  }
+};
+
+
+dfProto.colMap = function() {
+  var colNameArr = this._names.dropNa().unique().values;
+  var colIdx = colNameArr.map(function(colName) {
+    return singleColNameLookup(colName, this._names);
+  }, this);
+  var result = Object.create(null);
+  colIdx.forEach(function(colInd, i) {
+    var key = colNameArr[i];
+    result[key] = this._cols[colInd];
+  }, this);
+  return result;
 };
 
 
@@ -1757,6 +1985,14 @@ dfProto.equals = function(other, tolerance) {
     }
   }
   return true;
+};
+
+
+dfProto.toString = function() {
+  var result = 'DataFrame[nRow:' + this.nRow() +
+    ', nCol:' + this.nCol() +
+    ', allDtype:' + this.allDtype + ']';
+  return result;
 };
 
 
@@ -1813,8 +2049,11 @@ dfProto.names = function() {
 
 
 dfProto.setNames = function(names) {
-  // TODO
-  throw new Error('unimplemented method (TODO)');
+  names = ensureStringVector(names);
+  if (names.size() !== this._cols.length) {
+    throw new Error('the length of "names" must match the number of columns');
+  }
+  return newDataFrame(this._cols, names, false);
 };
 
 

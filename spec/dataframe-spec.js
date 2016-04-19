@@ -63,36 +63,36 @@ describe('data frame methods:', function() {
       });
     });
 
-    describe('df.colVectors', function() {
-      it('returns an array of the column vectors by default', function() {
-        var colVecArr = exampleDf1.colVectors();
-        expect(colVecArr.length).toBe(3);
-        expect(colVecArr[0].equals(jd.seq(5))).toBe(true);
-        expect(colVecArr[1].equals(jd.seqOut('a', 5))).toBe(true);
-        expect(colVecArr[2].equals(jd.rep(10, 5))).toBe(true);
+    describe('df.colArray', function() {
+      it('returns an array of the column vectors', function() {
+        var colArr = exampleDf1.colArray();
+        expect(colArr.length).toBe(3);
+        expect(colArr[0].equals(jd.seq(5))).toBe(true);
+        expect(colArr[1].equals(jd.seqOut('a', 5))).toBe(true);
+        expect(colArr[2].equals(jd.rep(10, 5))).toBe(true);
+      });
+    });
+
+    describe('df.colMap', function() {
+      it('returns an object with null prototype', function() {
+          var colMap = exampleDf1.colMap();
+          expect(Object.keys(colMap).length).toBe(3);
+          expect('toString' in colMap).toBe(false);
+          expect(colMap.A.equals(jd.seq(5))).toBe(true);
+          expect(colMap.B.equals(jd.seqOut('a', 5))).toBe(true);
+          expect(colMap.C.equals(jd.rep(10, 5))).toBe(true);
       });
 
-      describe('if "asObject" is true', function() {
-        it('returns an object with null prototype', function() {
-            var colVecMap = exampleDf1.colVectors(true);
-            expect(Object.keys(colVecMap).length).toBe(3);
-            expect('toString' in colVecMap).toBe(false);
-            expect(colVecMap.A.equals(jd.seq(5))).toBe(true);
-            expect(colVecMap.B.equals(jd.seqOut('a', 5))).toBe(true);
-            expect(colVecMap.C.equals(jd.rep(10, 5))).toBe(true);
-        });
-
-        it('only selects the first occurrence if there are duplicate ' +
-          'column names and ignores null column names',
-          function() {
-            var colVecMap = exampleDf2.colVectors(true);
-            expect(Object.keys(colVecMap).length).toBe(2);
-            expect('toString' in colVecMap).toBe(false);
-            expect(colVecMap.A.equals(jd.seq(5))).toBe(true);
-            expect(colVecMap.B.equals(jd.seq(10, 15))).toBe(true);
-          }
-        );
-      });
+      it('only selects the first occurrence if there are duplicate ' +
+        'column names and ignores null column names',
+        function() {
+          var colMap = exampleDf2.colMap();
+          expect(Object.keys(colMap).length).toBe(2);
+          expect('toString' in colMap).toBe(false);
+          expect(colMap.A.equals(jd.seq(5))).toBe(true);
+          expect(colMap.B.equals(jd.seq(10, 15))).toBe(true);
+        }
+      );
     });
 
     describe('df.equals', function() {
@@ -132,6 +132,20 @@ describe('data frame methods:', function() {
           expect(df.equals(exampleDf1, 0)).toBe(false);
         }
       );
+    });
+
+    describe('df.toString', function() {
+      it('provides a customized description of the data frame', function() {
+        expect(exampleDf1.toString()).toBe(
+          'DataFrame[nRow:5, nCol:3, allDtype:null]'
+        );
+        expect(exampleDf2.toString()).toBe(
+          'DataFrame[nRow:5, nCol:4, allDtype:number]'
+        );
+        expect(jd.df([]).toString()).toBe(
+          'DataFrame[nRow:0, nCol:0, allDtype:null]'
+        );
+      });
     });
   });
 
@@ -249,11 +263,43 @@ describe('data frame methods:', function() {
       });
     });
 
+    describe('df.setNames', function() {
+      it('behaves as expected for typical cases', function() {
+        var df = exampleDf2.setNames(['A', 'B', 'C', 'D']);
+        expect(df === exampleDf2).toBe(false);
+        expect(df.names().equals(jd.seqOut('A', 4))).toBe(true);
+        expect(df.resetNames().equals(exampleDf2.resetNames())).toBe(true);
+
+        var df2 = exampleDf2.setNames(jd.seq(4));
+        expect(df2.names().values).toEqual(['0', '1', '2', '3']);
+      });
+
+      it('throws an error if "names" has the wrong length', function() {
+        expect(function() {
+          exampleDf2.setNames(['A', 'B']);
+        }).toThrowError(/length/);
+
+        expect(function() {
+          exampleDf2.setNames(jd.seq(2));
+        }).toThrowError(/length/);
+
+        expect(function() {
+          exampleDf2.setNames([]);
+        }).toThrowError(/length/);
+      });
+    });
+
     describe('df.resetNames', function() {
       it('returns a new data frame with column names reset', function() {
         var df = exampleDf2.resetNames();
         expect(df === exampleDf2).toBe(false);
         expect(df.names().values).toEqual(['c0', 'c1', 'c2', 'c3']);
+        expect(df.nRow()).toBe(5);
+        expect(df.nCol()).toBe(4);
+        expect(df.c(0).equals(jd.seq(5))).toBe(true);
+        expect(df.c(1).equals(jd.seq(5, 10))).toBe(true);
+        expect(df.c(2).equals(jd.seq(10, 15))).toBe(true);
+        expect(df.c(3).equals(jd.seq(15, 20))).toBe(true);
       });
     });
   });

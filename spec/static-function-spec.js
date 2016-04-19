@@ -753,4 +753,10 @@ describe('static functions:', function() {
       });
     });
   });
+
+  describe('printing:', function() {
+    describe('printingOpts', function() {
+      
+    });
+  });
 });
