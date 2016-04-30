@@ -296,6 +296,33 @@ describe('data frame methods:', function() {
     });
   });
 
+  describe('missing values:', function() {
+    var naTestDf = jd.df([
+      [ 0,  NaN,    2,  3,   NaN],
+      ['a', 'b', null, 'd', null]
+    ], ['A', 'B']);
+
+    describe('df.isNa', function() {
+      it('returns a boolean data frame indicating missing values', function() {
+        var expectedDf = jd.df([
+          [false, true, false, false, true],
+          [false, false, true, false, true]
+        ], ['A', 'B']);
+        expect(naTestDf.isNa().equals(expectedDf)).toBe(true);
+      });
+    });
+
+    describe('df.dropNa', function() {
+      it('drops all rows with any missing values', function() {
+        var expectedDf = jd.df([
+          [0, 3],
+          ['a', 'd']
+        ], ['A', 'B']);
+        expect(naTestDf.dropNa().equals(expectedDf)).toBe(true);
+      });
+    });
+  });
+
   describe('subset selection / modification:', function() {
 
     describe('df.s', function() {
@@ -1129,6 +1156,401 @@ describe('data frame methods:', function() {
         expect(function() {
           df1.tail(NaN);
         }).toThrowError(/integer/);
+      });
+    });
+  });
+
+  describe('column / row iteration:', function() {
+
+    describe('df.mapCols', function() {
+      it('maps all columns when "colSelect" is unspecified', function() {
+        var df1 = exampleDf2.mapCols(function(colVec) {
+          return colVec.mul(-1);
+        });
+        expect(df1.nRow()).toBe(5);
+        expect(df1.nCol()).toBe(4);
+        expect(df1.names().equals(exampleDf2.names())).toBe(true);
+        expect(df1.c(0).equals(exampleDf2.c(0).mul(-1))).toBe(true);
+        expect(df1.c(1).equals(exampleDf2.c(1).mul(-1))).toBe(true);
+        expect(df1.c(2).equals(exampleDf2.c(2).mul(-1))).toBe(true);
+        expect(df1.c(3).equals(exampleDf2.c(3).mul(-1))).toBe(true);
+      });
+
+      it('only maps selected columns when given "colSelect"', function() {
+        var df1 = exampleDf1.mapCols([0, 2], function(colVec) {
+          return colVec.add(100);
+        });
+        expect(df1.nRow()).toBe(5);
+        expect(df1.nCol()).toBe(2);
+        expect(df1.names().values).toEqual(['A', 'C']);
+        expect(df1.c(0).equals(jd.seq(100, 105))).toBe(true);
+        expect(df1.c(1).equals(jd.rep(110, 5))).toBe(true);
+      });
+
+      it('works to aggregate when returning a scalar from "func"', function() {
+        var df1 = exampleDf1.mapCols(['A', 'C'], function(colVec) {
+          return colVec.mean();
+        });
+        expect(df1.nRow()).toBe(1);
+        expect(df1.nCol()).toBe(2);
+        expect(df1.names().values).toEqual(['A', 'C']);
+        expect(df1.at(0, 'A')).toBe(2);
+        expect(df1.at(0, 'C')).toBe(10);
+
+        var df2 = exampleDf2.mapCols(function(colVec) {
+          return colVec.mean();
+        });
+        expect(df2.nRow()).toBe(1);
+        expect(df2.nCol()).toBe(4);
+        expect(df2.names().equals(exampleDf2.names())).toBe(true);
+        expect(df2.at(0, 0)).toBe(2);
+        expect(df2.at(0, 1)).toBe(7);
+        expect(df2.at(0, 2)).toBe(12);
+        expect(df2.at(0, 3)).toBe(17);
+      });
+
+      it('passes "colName", "colIndex", and "resultIndex" to "func"',
+        function() {
+          var df1 = exampleDf1.mapCols(['A', 'C'],
+            function(colVector, colName, colIndex, resultIndex) {
+              return colName;
+            }
+          );
+          expect(df1.nRow()).toBe(1);
+          expect(df1.nCol()).toBe(2);
+          expect(df1.names().values).toEqual(['A', 'C']);
+          expect(df1.at(0, 'A')).toBe('A');
+          expect(df1.at(0, 'C')).toBe('C');
+
+          var df2 = exampleDf1.mapCols(['A', 'C', 'A'],
+            function(colVector, colName, colIndex, resultIndex) {
+              return [colIndex, resultIndex];
+            }
+          );
+          expect(df2.nRow()).toBe(2);
+          expect(df2.nCol()).toBe(3);
+          expect(df2.names().values).toEqual(['A', 'C', 'A']);
+          expect(df2.c(0).values).toEqual([0, 0]);
+          expect(df2.c(1).values).toEqual([2, 1]);
+          expect(df2.c(2).values).toEqual([0, 2]);
+        }
+      );
+
+      it('returns a 0-column data frame if "colSelect" is empty', function() {
+        var df1 = exampleDf1.mapCols([], function(c) { return c; });
+        expect(df1.nRow()).toBe(0);
+        expect(df1.nCol()).toBe(0);
+        expect(df1.equals(jd.df([]))).toBe(true);
+      });
+
+      it('throws an error if returned columns have inconsistent lengths',
+        function() {
+          expect(function() {
+            exampleDf2.mapCols(function(colVec, colName, colIndex) {
+              return jd.seq(colIndex + 1);
+            });
+          }).toThrowError(/lengths/);
+        }
+      );
+
+      it('throws an error if "func" is not a function', function() {
+        expect(function() {
+          exampleDf1.mapCols();
+        }).toThrowError(/function/);
+
+        expect(function() {
+          exampleDf1.mapCols([0, 1]);
+        }).toThrowError(/function/);
+
+        expect(function() {
+          exampleDf1.mapCols(jd.byDtype('number'), 'not a function');
+        }).toThrowError(/function/);
+      });
+    });
+
+    describe('df.updateCols', function() {
+      it('only alters selected columns using "func"', function() {
+        var df1 = exampleDf1.updateCols('B', function(colVec) {
+          return colVec.nChar();
+        });
+        expect(df1.nRow()).toBe(5);
+        expect(df1.nCol()).toBe(3);
+        expect(df1.names().equals(exampleDf1.names())).toBe(true);
+        expect(df1.c('A').equals(exampleDf1.c('A'))).toBe(true);
+        expect(df1.c('B').equals(jd.rep(1, 5))).toBe(true);
+        expect(df1.c('C').equals(exampleDf1.c('C'))).toBe(true);
+      });
+
+      it('behaves just like "mapCols" when "colSelect" is unspecified',
+        function() {
+          var df1 = exampleDf1.updateCols(function() { return jd.seq(5); });
+          var df2 = exampleDf1.mapCols(function() { return jd.seq(5); });
+          expect(df1.equals(df2)).toBe(true);
+          expect(df1.c(0).equals(jd.seq(5))).toBe(true);
+          expect(df1.c(1).equals(jd.seq(5))).toBe(true);
+          expect(df1.c(2).equals(jd.seq(5))).toBe(true);
+        }
+      );
+
+      it('passes "colName", "colIndex", and "resultIndex" to "func"',
+        function() {
+          var df1 = exampleDf2.updateCols([3, 2],
+            function(colVector, colName, colIndex, resultIndex) {
+              return [colName, colIndex, resultIndex, -1, -1];
+            }
+          );
+          expect(df1.nRow()).toBe(5);
+          expect(df1.nCol()).toBe(4);
+          expect(df1.names().equals(exampleDf2.names())).toBe(true);
+          expect(df1.s(null, jd.rng(0, 2)).equals(
+            exampleDf2.s(null, jd.rng(0, 2)))
+          ).toBe(true);
+          expect(df1.c(2).values).toEqual(['B', 2, 1, -1, -1]);
+          expect(df1.c(3).values).toEqual(['A', 3, 0, -1, -1]);
+        }
+      );
+
+      it('leaves the data frame unchanged if "colSelect" is empty', function() {
+        var df1 = exampleDf2.updateCols([], function(c) { return c; });
+        expect(df1.equals(exampleDf2)).toBe(true);
+      });
+
+      it('throws an error if "colSelect" selects columns more than once',
+        function() {
+          expect(function() {
+            exampleDf1.updateCols([0, 1, 0], function(c) { return c; });
+          }).toThrowError(/duplicate/);
+        }
+      );
+
+      it('throws an error if returned columns have length different from ' +
+        'the number of rows in this data frame',
+        function() {
+          expect(function() {
+            exampleDf1.updateCols(['A', 'C'], function() { return jd.seq(3); });
+          }).toThrowError(/lengths/);
+        }
+      );
+
+      it('throws an error if "func" is not a function', function() {
+        expect(function() {
+          exampleDf1.updateCols();
+        }).toThrowError(/function/);
+
+        expect(function() {
+          exampleDf1.updateCols([0, 1]);
+        }).toThrowError(/function/);
+
+        expect(function() {
+          exampleDf1.updateCols(jd.byDtype('number'), 'not a function');
+        }).toThrowError(/function/);
+      });
+    });
+
+    describe('df.mapRowObjects', function() {
+      it('behaves as expected for standard usage', function() {
+        var df1 = exampleDf1.mapRowObjects(function(obj) {
+          return obj.B;
+        });
+        expect(df1).toEqual(['a', 'b', 'c', 'd', 'e']);
+
+        var df2 = exampleDf1.mapRowObjects(function(obj, index) {
+          return index;
+        });
+        expect(df2).toEqual([0, 1, 2, 3, 4]);
+
+        var thisArg = {adder: 100};
+        var df3 = exampleDf1.mapRowObjects(function(obj, index, thisArg) {
+          return this.adder + obj.A;
+        }, thisArg);
+        expect(df3).toEqual([100, 101, 102, 103, 104]);
+      });
+
+      it('returns an empty array for 0-row data frames', function() {
+        var df1 = exampleDf1.s([]).mapRowObjects(function(x) { return x; });
+        expect(df1).toEqual([]);
+      });
+
+      it('throws an error if "func" is not a function', function() {
+        expect(function() {
+          exampleDf2.mapRowObjects();
+        }).toThrowError(/function/);
+
+        expect(function() {
+          exampleDf2.mapRowObjects('not a function');
+        }).toThrowError(/function/);
+      });
+    });
+
+    describe('df.mapRowArrays', function() {
+      it('behaves as expected for standard usage', function() {
+        var df1 = exampleDf1.mapRowArrays(function(array) {
+          return array[1];
+        });
+        expect(df1).toEqual(['a', 'b', 'c', 'd', 'e']);
+
+        var df2 = exampleDf1.mapRowArrays(function(array, index) {
+          return index;
+        });
+        expect(df2).toEqual([0, 1, 2, 3, 4]);
+
+        var thisArg = {adder: 100};
+        var df3 = exampleDf1.mapRowArrays(function(array, index, thisArg) {
+          return this.adder + array[0];
+        }, thisArg);
+        expect(df3).toEqual([100, 101, 102, 103, 104]);
+      });
+
+      it('returns an empty array for 0-row data frames', function() {
+        var df1 = exampleDf1.s([]).mapRowArrays(function(x) { return x; });
+        expect(df1).toEqual([]);
+      });
+
+      it('throws an error if "func" is not a function', function() {
+        expect(function() {
+          exampleDf2.mapRowArrays();
+        }).toThrowError(/function/);
+
+        expect(function() {
+          exampleDf2.mapRowArrays('not a function');
+        }).toThrowError(/function/);
+      });
+    });
+
+    describe('df.mapRowVectors', function() {
+      it('behaves as expected for standard usage', function() {
+        var df1 = exampleDf2.mapRowVectors(function(vector) {
+          return vector.mean();
+        });
+        expect(df1).toEqual([7.5, 8.5, 9.5, 10.5, 11.5]);
+
+        var df2 = exampleDf2.mapRowVectors(function(array, index) {
+          return index;
+        });
+        expect(df2).toEqual([0, 1, 2, 3, 4]);
+
+        var thisArg = {adder: 100};
+        var df3 = exampleDf2.mapRowVectors(function(vector, index, thisArg) {
+          return this.adder + vector.at(0);
+        }, thisArg);
+        expect(df3).toEqual([100, 101, 102, 103, 104]);
+      });
+
+      it('returns an empty array for 0-row data frames', function() {
+        var df1 = exampleDf2.s([]).mapRowVectors(function(x) { return x; });
+        expect(df1).toEqual([]);
+      });
+
+      it('throws an error if "df.allDtype" is null', function() {
+        expect(function() {
+          exampleDf1.mapRowVectors(function(vector, index) {
+            return index;
+          });
+        }).toThrowError(/allDtype/);
+      });
+
+      it('throws an error if "func" is not a function', function() {
+        expect(function() {
+          exampleDf2.mapRowVectors();
+        }).toThrowError(/function/);
+
+        expect(function() {
+          exampleDf2.mapRowVectors('not a function');
+        }).toThrowError(/function/);
+      });
+    });
+  });
+
+  describe('row uniqueness:', function() {
+    var uniqTestDf = jd.df([
+      [ 1,   2,   2,   2,   1,   2 ],
+      ['a', 'b', 'a', 'b', 'b', 'a']
+    ], ['A', 'B']);
+
+    var uniqTestDf2 = jd.colCat(uniqTestDf, {C: jd.rep({}, 6)});
+
+    describe('df.unique', function() {
+      it('keeps the first occurrence of unique rows', function() {
+        var expectedDf = jd.df([
+          [ 1,   2,   2,   1 ],
+          ['a', 'b', 'a', 'b']
+        ], ['A', 'B']);
+        expect(uniqTestDf.unique().equals(expectedDf)).toBe(true);
+      });
+
+      it('does not alter data frames with unique rows', function() {
+        expect(exampleDf1.unique().equals(exampleDf1)).toBe(true);
+      });
+
+      it('works for 0-row data frames', function() {
+        expect(jd.df([]).unique().equals(jd.df([]))).toBe(true);
+        expect(jd.df([jd.seq(0)]).unique().equals(
+          jd.df([jd.seq(0)]))).toBe(true);
+      });
+
+      it('throws an error if the data frame has "object" columns', function() {
+        expect(function() {
+          uniqTestDf2.unique();
+        }).toThrowError(/object/);
+      });
+    });
+
+    describe('df.nUnique', function() {
+      it('returns the number of unique rows', function() {
+        expect(uniqTestDf.nUnique()).toBe(4);
+        expect(exampleDf1.nUnique()).toBe(5);
+      });
+
+      it('works for 0-row data frames', function() {
+        expect(jd.df([]).nUnique()).toBe(0);
+        expect(jd.df([jd.seq(0), jd.seq(0)]).nUnique()).toBe(0);
+      });
+
+      it('throws an error if the data frame has "object" columns', function() {
+        expect(function() {
+          uniqTestDf2.nUnique();
+        }).toThrowError(/object/);
+      });
+    });
+
+    describe('df.duplicated', function() {
+      it('works when "keep" is "first" (the default)', function() {
+        var expectedBools = [false, false, false, true, false, true];
+        expect(uniqTestDf.duplicated().values).toEqual(expectedBools);
+        expect(uniqTestDf.duplicated('first').values).toEqual(expectedBools);
+      });
+
+      it('works when "keep" is "last"', function() {
+        expect(uniqTestDf.duplicated('last').values).toEqual(
+          [false, true, true, false, false, false]
+        );
+      });
+
+      it('works when "keep" is false', function() {
+        expect(uniqTestDf.duplicated(false).values).toEqual(
+          [false, true, true, true, false, true]
+        );
+      });
+
+      it('works for 0-row data frames', function() {
+        expect(jd.df([]).duplicated().values).toEqual([]);
+        expect(jd.df([jd.seq(0), jd.seq(0)]).duplicated().values).toEqual([]);
+      });
+
+      it('throws an error if "keep" isn\'t a recognized value', function() {
+        expect(function() {
+          uniqTestDf.duplicated(true);
+        }).toThrowError(/keep/);
+
+        expect(function() {
+          uniqTestDf.duplicated('unknown option');
+        }).toThrowError(/keep/);
+      });
+
+      it('throws an error if the data frame has "object" columns', function() {
+        expect(function() {
+          uniqTestDf2.duplicated();
+        }).toThrowError(/object/);
       });
     });
   });

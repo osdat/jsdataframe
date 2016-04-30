@@ -1075,7 +1075,7 @@ describe('vector methods:', function() {
   });
 
   describe('membership methods:', function() {
-    var numVec = jd.vector([2, NaN, 0, 2, 2, NaN, 1, 1,   NaN, NaN]);
+    var numVec = jd.vector([2, NaN, 0, 2, 2, NaN, 1, 1, NaN, NaN]);
     var dateVec = numVec.toDtype('date');
     var strVec = numVec.toDtype('string');
     var objVec = numVec.toDtype('object');
@@ -1263,6 +1263,16 @@ describe('vector methods:', function() {
         var emptyVec = jd.vector([], 'number').duplicated();
         expect(emptyVec.dtype).toBe('boolean');
         expect(emptyVec.values).toEqual([]);
+      });
+
+      it('throws an error if "keep" isn\'t a recognized value', function() {
+        expect(function() {
+          numVec.duplicated(true);
+        }).toThrowError(/keep/);
+
+        expect(function() {
+          numVec.duplicated('unknown option');
+        }).toThrowError(/keep/);
       });
     });
   });

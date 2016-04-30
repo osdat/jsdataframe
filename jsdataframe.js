@@ -735,9 +735,7 @@ jd.printingOpts.setMaxLines = function(maxLines) {
 };
 
 jd.printingOpts.setPrintFunction = function(callback) {
-  if (typeof callback !== 'function') {
-    throw new Error('"callback" must be a function');
-  }
+  validateFunction(callback, 'callback');
   this._printCallback = callback;
 };
 
@@ -753,7 +751,9 @@ vectorProto.printToString = function(maxLines) {
   } else {
     validatePrintMax(maxLines, _MIN_MAX_LINES, 'maxLines');
   }
-
+  if (this.values.length === 0) {
+    return this.toString();
+  }
   var rowIds = rightAlign(makeRowIds(this.values.length, maxLines));
   var printVector = rightAlign(this._toTruncatedPrintVector(maxLines));
   var printLines = jd.strCat(rowIds, _PRINT_SEP, printVector);
@@ -2237,6 +2237,36 @@ dfProto.resetNames = function() {
 
 
 /*-----------------------------------------------------------------------------
+* Missing Values
+*/
+
+dfProto.isNa = function() {
+  return this.mapCols(function(vec) {
+    return vec.isNa();
+  });
+};
+
+dfProto.dropNa = function() {
+  var nCol = this.nCol();
+  var nRow = this.nRow();
+  if (nRow === 0) {
+    return this;
+  }
+  var keepArray = allocArray(nRow);
+  for (var i = 0; i < nRow; i++) {
+    keepArray[i] = true;
+    for (var j = 0; j < nCol; j++) {
+      if (isMissing(this._cols[j].values[i])) {
+        keepArray[i] = false;
+        break;
+      }
+    }
+  }
+  return this.s(keepArray);
+};
+
+
+/*-----------------------------------------------------------------------------
 * Subset Selection / Modification
 */
 
@@ -2246,13 +2276,13 @@ dfProto.s = function(rowSelect, colSelect) {
   var rowIdxVec = standardIndexing(rowSelect, this.nRow());
   var colIdxVec = columnIndexing(colSelect, this._names, this._dtypesVector());
 
-  var colNames = this._names.values;
+  var colNameArr = this._names.values;
   var columns = this._cols;
   if (colIdxVec !== null) {
-    colNames = subsetArray(colNames, colIdxVec.values);
+    colNameArr = subsetArray(colNameArr, colIdxVec.values);
     columns = subsetArray(columns, colIdxVec.values);
   }
-  colNames = newVector(colNames, 'string');
+  var colNames = newVector(colNameArr, 'string');
 
   if (rowIdxVec !== null) {
     if (colIdxVec === null) {
@@ -2285,9 +2315,10 @@ dfProto.sMod = function(rowSelect, colSelect, values) {
   var colIdxVec = columnIndexing(colSelect, this._names, this._dtypesVector());
   if (colIdxVec === null) {
     colIdxVec = jd.seq(this.nCol());
+  } else {
+    validateUniqueColInds(colIdxVec);
   }
 
-  validateUniqueColInds(colIdxVec);
   if (valuesIsDataFrame) {
     var numRowsSelected = (rowIdxVec === null) ? this.nRow() : rowIdxVec.size();
     if (numRowsSelected !== values.nRow() ||
@@ -2378,6 +2409,136 @@ dfProto.tail = function(n) {
   validateInt(n, 'n');
   var start = (n < 0) ? -n : this.nRow() - n;
   return this.s(jd.rng(start, undefined));
+};
+
+
+/*-----------------------------------------------------------------------------
+* Column / Row Iteration
+*/
+
+dfProto.mapCols = function(colSelect, func) {
+  if (arguments.length < 2) {
+    func = colSelect;
+    colSelect = null;
+  }
+  validateFunction(func, 'func');
+
+  var colIdxVec = columnIndexing(colSelect, this._names, this._dtypesVector());
+  if (colIdxVec === null) {
+    colIdxVec = jd.seq(this._cols.length);
+  }
+
+  var oldNameArr = this._names.values;
+  var numIters = colIdxVec.values.length;
+  var colNameArr = allocArray(numIters);
+  var columns = allocArray(numIters);
+  for (var j = 0; j < numIters; j++) {
+    var colIndex = colIdxVec.values[j];
+    var colVector = this._cols[colIndex];
+    var colName = oldNameArr[colIndex];
+    columns[j] = func(colVector, colName, colIndex, j);
+    colNameArr[j] = colName;
+  }
+
+  var colNames = newVector(colNameArr, 'string');
+  return newDataFrame(columns, colNames);
+};
+
+
+dfProto.updateCols = function(colSelect, func) {
+  if (arguments.length < 2) {
+    func = colSelect;
+    colSelect = null;
+  }
+  validateFunction(func, 'func');
+
+  var colIdxVec = columnIndexing(colSelect, this._names, this._dtypesVector());
+  if (colIdxVec === null) {
+    colIdxVec = jd.seq(this._cols.length);
+  } else {
+    validateUniqueColInds(colIdxVec);
+  }
+
+  var nameArray = this._names.values;
+  var columns = this._cols.slice();
+  var numIters = colIdxVec.values.length;
+  for (var j = 0; j < numIters; j++) {
+    var colIndex = colIdxVec.values[j];
+    var colVector = this._cols[colIndex];
+    var colName = nameArray[colIndex];
+    columns[colIndex] = func(colVector, colName, colIndex, j);
+  }
+
+  return newDataFrame(columns, this._names);
+};
+
+
+dfProto.mapRowObjects = function(func, thisArg) {
+  validateFunction(func, 'func');
+  return this.toObjArray().map(func, thisArg);
+};
+
+
+dfProto.mapRowArrays = function(func, thisArg) {
+  validateFunction(func, 'func');
+  return this.toMatrix().map(func, thisArg);
+};
+
+
+dfProto.mapRowVectors = function(func, thisArg) {
+  validateFunction(func, 'func');
+  var allDtype = this.allDtype;
+  if (allDtype === null) {
+    throw new Error('cannot call "mapRowVectors" on a data frame with ' +
+      'null "allDtype" property');
+  }
+  var array = this.toMatrix();
+  for (var i = 0; i < array.length; i++) {
+    array[i] = newVector(array[i], allDtype);
+  }
+  return array.map(func, thisArg);
+};
+
+
+/*-----------------------------------------------------------------------------
+* Row Uniqueness
+*/
+
+dfProto.unique = function() {
+  if (this.nCol() === 0) {
+    return this;
+  }
+  validateDataFrameHasNoObjectCols(this);
+  var columns = this._getIndex().unique();
+  return newDataFrame(columns, this._names, false);
+};
+
+
+dfProto.nUnique = function() {
+  if (this.nCol() === 0) {
+    return 0;
+  }
+  validateDataFrameHasNoObjectCols(this);
+  return this._getIndex().size;
+};
+
+
+dfProto.duplicated = function(keep) {
+  if (this.nCol() === 0) {
+    return newVector([], 'boolean');
+  }
+  validateDataFrameHasNoObjectCols(this);
+  return this._getIndex().duplicated(keep);
+};
+
+
+// Private helper for retrieving the multi-column index or creating one
+// if it's not yet present
+dfProto._getIndex = function() {
+  if (this._index === null) {
+    this._index = newNestedIndex(this._cols);
+  }
+  return this._index;
 };
 
 
@@ -3386,6 +3547,7 @@ function newDataFrame(columns, colNames, validateCols) {
   var df = Object.create(dfProto);
   df._cols = columns;
   df._names = colNames;
+  df._index = null;
   df.allDtype = allDtype;
 
   return df;
@@ -3606,6 +3768,13 @@ function validateNonnegInt(value, varName) {
 }
 
 // Returns undefined or throws an error if invalid
+function validateFunction(value, varName) {
+  if (typeof value !== 'function') {
+    throw new Error('"' + varName + '" must be a function');
+  }
+}
+
+// Returns undefined or throws an error if invalid
 function validateVectorIsDtype(vector, dtype) {
   if (vector.dtype !== dtype) {
     throw new Error('expected vector dtype to be "' + dtype + '" but got "' +
@@ -3617,6 +3786,14 @@ function validateVectorIsDtype(vector, dtype) {
 function validateVectorIsNotDtype(vector, dtype) {
   if (vector.dtype === dtype) {
     throw new Error('unsupported operation for dtype "' + dtype + '"');
+  }
+}
+
+// Returns undefined or throws an error if invalid
+function validateDataFrameHasNoObjectCols(df) {
+  if (df._dtypesVector().contains('object')) {
+    throw new Error('unsupported operation for data frame containing ' +
+      'column with dtype "object"');
   }
 }
 
