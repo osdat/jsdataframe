@@ -328,11 +328,13 @@ describe('static functions:', function() {
     });
   });
 
+
+  var numVec = jd.seq(5);
+  var strVec = jd.seqOut('a', 5);
+  var colNames = jd.vector(['A', 'B', 'C']);
+  var exampleDf = jd.df([numVec, strVec, 10], colNames);
+
   describe('data frame creation:', function() {
-    var numVec = jd.seq(5);
-    var strVec = jd.seqOut('a', 5);
-    var colNames = jd.vector(['A', 'B', 'C']);
-    var exampleDf = jd.df([numVec, strVec, 10], colNames);
 
     describe('jd.df', function() {
 
@@ -671,8 +673,9 @@ describe('static functions:', function() {
 
     describe('jd.vCat', function() {
       it('behaves as expected for standard usage', function() {
-        var vector1 = jd.vCat(NaN, jd.seq(3), jd.vector([]), 10,
-          [11, 12, null], []);
+        var vector1 = jd.vCat(
+          NaN, jd.seq(3), jd.vector([]), 10, [11, 12, null], []
+        );
         expect(vector1.dtype).toBe('number');
         expect(vector1.values).toEqual([NaN, 0, 1, 2, 10, 11, 12, NaN]);
 
@@ -725,6 +728,195 @@ describe('static functions:', function() {
       });
     });
 
+    var exampleDf1 = jd.df([jd.seq(5), jd.seqOut('a', 5), 10],
+      ['A', 'B', 'C']);
+    var exampleDf2 = jd.df(
+      [jd.seq(5), jd.seq(5, 10), jd.seq(10, 15), jd.seq(15, 20)],
+      ['A', null, 'B', 'A']
+    );
+
+    describe('jd.colCat', function() {
+      it('behaves as expected for data frame arguments', function() {
+        var df = jd.colCat(exampleDf, exampleDf, exampleDf);
+        expect(df.nRow()).toBe(5);
+        expect(df.nCol()).toBe(9);
+        expect(df.names().values).toEqual(jd.rep(['A', 'B', 'C'], 3).values);
+        expect(df.s(null, jd.rng(0, 3)).equals(exampleDf)).toBe(true);
+        expect(df.s(null, jd.rng(3, 6)).equals(exampleDf)).toBe(true);
+        expect(df.s(null, jd.rng(6, 9)).equals(exampleDf)).toBe(true);
+
+        expect(jd.colCat(exampleDf).equals(exampleDf)).toBe(true);
+      });
+
+      it('concatenates data frames, vectors, arrays, and scalars correctly ' +
+        'while allowing for column name shorthand via object wrapping',
+        function() {
+          var df1 = jd.colCat(
+            {missingCol: NaN},
+            exampleDf1,
+            null,
+            jd.df([]),  // empty data frames are ignored
+            {letters: jd.seqOut('a', 5)},
+            [100, 101, 102, 103, 104],
+            exampleDf2.head(1),
+            jd.df([])   // empty data frames are ignored
+          );
+
+          expect(df1.names().values).toEqual(
+            ['missingCol', 'A', 'B', 'C', null, 'letters', null,
+              'A', null, 'B', 'A']
+          );
+          expect(df1.c('missingCol').equals(jd.repNa(5, 'number'))).toBe(true);
+          expect(df1.s(null, jd.rng(1, 4)).equals(exampleDf1)).toBe(true);
+          expect(df1.c(4).equals(jd.repNa(5, 'object'))).toBe(true);
+          expect(df1.c('letters').equals(jd.seqOut('a', 5))).toBe(true);
+          expect(df1.c(6).equals(jd.seq(100, 105))).toBe(true);
+          expect(df1.c(7).equals(jd.rep(0, 5))).toBe(true);
+          expect(df1.c(8).equals(jd.rep(5, 5))).toBe(true);
+          expect(df1.c(9).equals(jd.rep(10, 5))).toBe(true);
+          expect(df1.c(10).equals(jd.rep(15, 5))).toBe(true);
+
+          var df2 = jd.colCat(0, [1, 2, 3]);
+          expect(df2.names().values).toEqual([null, null]);
+          expect(df2.c(0).values).toEqual([0, 0, 0]);
+          expect(df2.c(1).values).toEqual([1, 2, 3]);
+
+          var df3 = jd.colCat(42);
+          expect(df3.nRow()).toBe(1);
+          expect(df3.nCol()).toBe(1);
+          expect(df3.names().values).toEqual([null]);
+          expect(df3.at(0, 0)).toBe(42);
+        }
+      );
+
+      it('finds all keys within a column name wrapping object', function() {
+        var df = jd.colCat({A: 'a', B: 'b'}, {C: 'c', D: jd.seq(3)});
+        expect(df.nRow()).toBe(3);
+        expect(df.nCol()).toBe(4);
+        expect(df.c('A').equals(jd.rep('a', 3))).toBe(true);
+        expect(df.c('B').equals(jd.rep('b', 3))).toBe(true);
+        expect(df.c('C').equals(jd.rep('c', 3))).toBe(true);
+        expect(df.c('D').equals(jd.seq(3))).toBe(true);
+      });
+
+      it('creates an empty data frame if called without arguments', function() {
+        var df = jd.colCat();
+        expect(df.nRow()).toBe(0);
+        expect(df.nCol()).toBe(0);
+
+        expect(jd.colCat(df, df).equals(df)).toBe(true);
+      });
+
+      it('throws an error if arguments have incompatible lengths', function() {
+        expect(function() {
+          jd.colCat(jd.seq(5), jd.seq(4));
+        }).toThrowError(/length/);
+
+        expect(function() {
+          jd.colCat(exampleDf1, jd.seq(4));
+        }).toThrowError(/length/);
+
+        expect(function() {
+          jd.colCat(exampleDf1, jd.vector([]));
+        }).toThrowError(/length/);
+
+        expect(function() {
+          jd.colCat(exampleDf1, exampleDf1.head(2));
+        }).toThrowError(/length/);
+      });
+    });
+
+    describe('jd.rowCat', function() {
+      it('behaves as expected for data frame arguments', function() {
+        var df = jd.rowCat(exampleDf, exampleDf, exampleDf);
+        expect(df.nRow()).toBe(15);
+        expect(df.nCol()).toBe(3);
+        expect(df.names().values).toEqual(['A', 'B', 'C']);
+        expect(df.c('A').equals(jd.rep(jd.seq(5), 3))).toBe(true);
+        expect(df.c('B').equals(jd.rep(jd.seqOut('a', 5), 3))).toBe(true);
+        expect(df.c('C').equals(jd.rep(10, 15))).toBe(true);
+
+        expect(jd.rowCat(exampleDf).equals(exampleDf)).toBe(true);
+      });
+
+      it('concatenates data frames, vectors, arrays, and scalars correctly ' +
+        'while nulling out column names that are inconsistent',
+        function() {
+          var df1 = jd.rowCat(exampleDf1, exampleDf2.s(null, jd.rng(0, 3)));
+          expect(df1.nRow()).toBe(10);
+          expect(df1.nCol()).toBe(3);
+          expect(df1.names().values).toEqual(['A', null, null]);
+          expect(df1.dtypes().c('dtype').values).toEqual(
+            ['number', 'object', 'number']
+          );
+          expect(df1.c(0).equals(jd.rep(jd.seq(5), 2))).toBe(true);
+          expect(df1.c(1).equals(
+            jd.vCat(jd.seqOut('a', 5), jd.seq(5, 10)))).toBe(true);
+          expect(df1.c(2).equals(
+            jd.vCat(jd.rep(10, 5), jd.seq(10, 15)))).toBe(true);
+
+          var df2 = jd.rowCat(
+            null,
+            jd.df([]),  // empty data frames are ignored
+            exampleDf1,
+            [5, 'f', 10],
+            jd.df([[], [], []], ['A', 'B', 'inconsistent']),
+            jd.vector([6, 'g', false]),
+            jd.df([])   // empty data frames are ignored
+          );
+          expect(df2.names().values).toEqual(['A', 'B', null]);
+          expect(df2.c('A').equals(jd.vCat(NaN, jd.seq(7)))).toBe(true);
+          expect(df2.c('B').equals(
+            jd.vCat(null, jd.seqOut('a', 7)))).toBe(true);
+          expect(df2.c(null).equals(
+            jd.vCat(null, jd.rep(10, 6), false))).toBe(true);
+
+          var df3 = jd.rowCat(0, [1, 2, 3]);
+          expect(df3.nCol()).toBe(3);
+          expect(df3.names().values).toEqual([null, null, null]);
+          expect(df3.c(0).values).toEqual([0, 1]);
+          expect(df3.c(1).values).toEqual([0, 2]);
+          expect(df3.c(2).values).toEqual([0, 3]);
+
+          var df4 = jd.rowCat(42);
+          expect(df4.nRow()).toBe(1);
+          expect(df4.nCol()).toBe(1);
+          expect(df4.names().values).toEqual([null]);
+          expect(df4.at(0, 0)).toBe(42);
+        }
+      );
+
+      it('creates an empty data frame if called without arguments', function() {
+        var df = jd.rowCat();
+        expect(df.nRow()).toBe(0);
+        expect(df.nCol()).toBe(0);
+
+        expect(jd.rowCat(df, df).equals(df)).toBe(true);
+      });
+
+      it('throws an error if arguments have incompatible lengths', function() {
+        expect(function() {
+          jd.rowCat(jd.seq(5), jd.seq(4));
+        }).toThrowError(/number/);
+
+        expect(function() {
+          jd.rowCat(exampleDf1, jd.seq(4));
+        }).toThrowError(/number/);
+
+        expect(function() {
+          jd.rowCat(exampleDf1, jd.vector([]));
+        }).toThrowError(/number/);
+
+        expect(function() {
+          jd.rowCat(exampleDf1, exampleDf2);
+        }).toThrowError(/number/);
+
+        expect(function() {
+          jd.rowCat(exampleDf1, exampleDf1.s(null, 0));
+        }).toThrowError(/number/);
+      });
+    });
+
     describe('jd.strCat', function() {
       it('behaves as expected for standard usage', function() {
         var strVec = jd.strCat('(c', jd.seq(3), '_', ['x', 'y', 'z'], ')');
@@ -756,7 +948,7 @@ describe('static functions:', function() {
 
   describe('printing:', function() {
     describe('printingOpts', function() {
-      
+
     });
   });
 });

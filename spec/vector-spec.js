@@ -202,23 +202,27 @@ describe('vector methods:', function() {
         });
 
         it('works for integer ranges', function() {
-          expect(vector.s(jd.r(1, 3)).values).toEqual([11, 12]);
-          expect(vector.s(jd.r(1, 3, true)).values).toEqual([11, 12, 13]);
-          expect(vector.s(jd.r(undefined, 3)).values).toEqual([10, 11, 12]);
-          expect(vector.s(jd.r(2, undefined)).values).toEqual([12, 13, 14]);
-          expect(vector.s(jd.r(1, -2)).values).toEqual([11, 12]);
-          expect(vector.s(jd.r(-99, -2)).values).toEqual([10, 11, 12]);
-          expect(vector.s(jd.r(-2, 99)).values).toEqual([13, 14]);
-          expect(vector.s(jd.r(4, 4)).values).toEqual([]);
-          expect(vector.s(jd.r(4, 4, true)).values).toEqual([14]);
-          expect(vector.s(jd.r(3, 1, true)).values).toEqual([]);
+          expect(vector.s(jd.rng(1, 3)).values).toEqual([11, 12]);
+          expect(vector.s(jd.rng(1, 3, true)).values).toEqual([11, 12, 13]);
+          expect(vector.s(jd.rng(undefined, 3)).values).toEqual([10, 11, 12]);
+          expect(vector.s(jd.rng(2, undefined)).values).toEqual([12, 13, 14]);
+          expect(vector.s(jd.rng(1, -2)).values).toEqual([11, 12]);
+          expect(vector.s(jd.rng(-99, -2)).values).toEqual([10, 11, 12]);
+          expect(vector.s(jd.rng(-2, 99)).values).toEqual([13, 14]);
+          expect(vector.s(jd.rng(4, 4)).values).toEqual([]);
+          expect(vector.s(jd.rng(4, 4, true)).values).toEqual([14]);
+          expect(vector.s(jd.rng(3, 1, true)).values).toEqual([]);
         });
 
         it('works for integer range concatenations', function() {
-          var rangeCat = jd.rCat(jd.r(-2, undefined), jd.r(undefined, -2));
+          var rangeCat = jd.rngCat(
+            jd.rng(-2, undefined), jd.rng(undefined, -2)
+          );
           expect(vector.s(rangeCat).values).toEqual([13, 14, 10, 11, 12]);
 
-          var rangeCat2 = jd.rCat([0, 2], -1, jd.r(1, 4), jd.rCat(1, [2, 3]));
+          var rangeCat2 = jd.rngCat(
+            [0, 2], -1, jd.rng(1, 4), jd.rngCat(1, [2, 3])
+          );
           expect(vector.s(rangeCat2).values).toEqual(
             [10, 12, 14, 11, 12, 13, 11, 12, 13]
           );
@@ -232,61 +236,61 @@ describe('vector methods:', function() {
           expect(vector.s(jd.ex([3, 4])).values).toEqual([10, 11, 12]);
           expect(vector.s(jd.seq(2).ex()).values).toEqual([12, 13, 14]);
           expect(vector.s(jd.seq(0).ex()).values).toEqual(vector.values);
-          expect(vector.s(jd.r(0, -1, true).ex()).values).toEqual([]);
-          expect(vector.s(jd.r(1, -1).ex()).values).toEqual([10, 14]);
-          var rangeCat = jd.rCat(jd.r(0, 2), jd.r(3, undefined));
+          expect(vector.s(jd.rng(0, -1, true).ex()).values).toEqual([]);
+          expect(vector.s(jd.rng(1, -1).ex()).values).toEqual([10, 14]);
+          var rangeCat = jd.rngCat(jd.rng(0, 2), jd.rng(3, undefined));
           expect(vector.s(rangeCat.ex()).values).toEqual([12]);
         });
 
         it('requires all integer indices to be within bounds', function() {
           expect(function() {
-            expect(vector.s([0, 5]));
+            vector.s([0, 5]);
           }).toThrowError(/bounds/);
 
           expect(function() {
-            expect(vector.s(-6));
+            vector.s(-6);
           }).toThrowError(/bounds/);
         });
 
         it('does not allow NaN indices', function() {
           expect(function() {
-            expect(vector.s([0, 2, NaN]));
+            vector.s([0, 2, NaN]);
           }).toThrowError(/non-integer/);
 
           expect(function() {
-            expect(vector.s(jd.r(3, NaN)));
+            vector.s(jd.rng(3, NaN));
           }).toThrowError(/non-integer/);
 
           expect(function() {
-            expect(vector.s(jd.rCat([0, 2], NaN)));
+            vector.s(jd.rngCat([0, 2], NaN));
           }).toThrowError(/non-integer/);
         });
 
         it('requires all indices to be integers', function() {
           expect(function() {
-            expect(vector.s([0, 2, 1.5]));
+            vector.s([0, 2, 1.5]);
           }).toThrowError(/non-integer/);
 
           expect(function() {
-            expect(vector.s(jd.r(0, 1.5)));
+            vector.s(jd.rng(0, 1.5));
           }).toThrowError(/non-integer/);
 
           expect(function() {
-            expect(vector.s(jd.rCat([0, 2], 1.5)));
+            vector.s(jd.rngCat([0, 2], 1.5));
           }).toThrowError(/non-integer/);
         });
 
         it('fails for non-numeric indices', function() {
           expect(function() {
-            expect(vector.s('string'));
+            vector.s('string');
           }).toThrowError(/integer indexing/);
 
           expect(function() {
-            expect(vector.s(jd.r(0, 'string')));
+            vector.s(jd.rng(0, 'string', true));
           }).toThrowError(/integer indexing/);
 
           expect(function() {
-            expect(vector.s(jd.rCat([0, 2], 'string')));
+            vector.s(jd.rngCat([0, 2], 'string'));
           }).toThrowError(/integer indexing/);
         });
       });
@@ -301,7 +305,7 @@ describe('vector methods:', function() {
           expect(vector.sMod([0, 2, 4], 0).values).toEqual(
             [0, 11, 0, 13, 0]
           );
-          expect(vector.sMod(jd.r(-3, undefined), [3, 2, 1]).values).toEqual(
+          expect(vector.sMod(jd.rng(-3), [3, 2, 1]).values).toEqual(
             [10, 11, 3, 2, 1]
           );
           expect(vector.sMod(jd.seq(2), jd.seq(2)).values).toEqual(
@@ -312,6 +316,24 @@ describe('vector methods:', function() {
         }
       );
 
+      it('works as expected when replacing every element', function() {
+        expect(vector.sMod(jd.seq(5), jd.seq(5)).equals(jd.seq(5))).toBe(true);
+      });
+
+      it('works as expected when "values" is empty', function() {
+        expect(vector.sMod([], jd.repNa(0, 'number')).equals(vector))
+          .toBe(true);
+      });
+
+      it('uses the last modification if an element is selected multiple times',
+        function() {
+          var vector = jd.rep(0, 3);
+          expect(vector.sMod([1, 2, 1], jd.seq(3)).values).toEqual(
+            [0, 2, 1]
+          );
+        }
+      );
+
       it('throws an error if "values" has the wrong dtype',
         function() {
           expect(function() {
@@ -319,7 +341,7 @@ describe('vector methods:', function() {
           }).toThrowError(/dtype/);
 
           expect(function() {
-            vector.sMod(jd.r(2, 4), [true, false]);
+            vector.sMod(jd.rng(2, 4), [true, false]);
           }).toThrowError(/dtype/);
         }
       );

@@ -490,6 +490,177 @@ jd.vCat = function() {
 };
 
 
+jd.colCat = function() {
+  var numArgs = arguments.length;
+  var args = allocArray(numArgs);
+  for (var i = 0; i < numArgs; i++) {
+    args[i] = arguments[i];
+  }
+  return jd._colCatArray(args);
+};
+
+jd._colCatArray = function(array) {
+  var arrLen = array.length;
+  var columns = [];
+  var colNameArray = [];
+  var j;
+  for (var i = 0; i < arrLen; i++) {
+    var elem = array[i];
+    if (isUndefined(elem) || elem === null) {
+      // treat as scalar
+      columns.push(elem);
+      colNameArray.push(null);
+    } else if (elem.type === dfProto.type) {
+      // elem is a data frame
+      var nCol = elem._cols.length;
+      for (j = 0; j < nCol; j++) {
+        columns.push(elem._cols[j]);
+        colNameArray.push(elem._names.values[j]);
+      }
+    } else if (typeof elem === 'object' &&
+      elem.type !== vectorProto.type &&
+      !Array.isArray(elem)) {
+      // elem is an object for column name wrapping
+      var keys = Object.keys(elem);
+      for (j = 0; j < keys.length; j++) {
+        var key = keys[j];
+        columns.push(elem[key]);
+        colNameArray.push(key);
+      }
+    } else {
+      // elem is a vector, array, or scalar
+      columns.push(elem);
+      colNameArray.push(null);
+    }
+  }
+  return newDataFrame(columns, newVector(colNameArray, 'string'));
+};
+
+
+jd.rowCat = function() {
+  var numArgs = arguments.length;
+  var args = allocArray(numArgs);
+  for (var i = 0; i < numArgs; i++) {
+    args[i] = arguments[i];
+  }
+  return jd._rowCatArray(args);
+};
+
+// Define types of elements for rowCatArray function
+var ROW_ELEM_TYPES = {
+  SCALAR: 0,
+  ARRAY: 1,
+  VECTOR: 2,
+  DATA_FRAME: 3
+};
+
+jd._rowCatArray = function(array) {
+  var arrLen = array.length;
+
+  // Check column and row count and resolve column names
+  var elemTypes = allocArray(arrLen);
+  var colNameArr = null;
+  var numRows = 0;
+  var numCols = -1;
+  var elem, i, j;
+  for (i = 0; i < arrLen; i++) {
+    elem = array[i];
+    var elemColCount;
+    if (isUndefined(elem) || elem === null || typeof elem !== 'object') {
+      elemTypes[i] = ROW_ELEM_TYPES.SCALAR;
+      numRows++;
+      elemColCount = numCols;
+    } else if (elem.type === dfProto.type) {
+      elemTypes[i] = ROW_ELEM_TYPES.DATA_FRAME;
+      elemColCount = elem.nCol();
+      if (elemColCount === 0) {
+        continue;
+      }
+      numRows += elem.nRow();
+      // Check column names
+      if (colNameArr === null) {
+        colNameArr = elem._names.values.slice();
+      } else {
+        var len = Math.min(colNameArr.length, elemColCount);
+        var elemNameArr = elem._names.values;
+        for (j = 0; j < len; j++) {
+          if (elemNameArr[j] !== colNameArr[j]) {
+            colNameArr[j] = null;
+          }
+        }
+      }
+    } else if (elem.type === vectorProto.type) {
+      elemTypes[i] = ROW_ELEM_TYPES.VECTOR;
+      numRows++;
+      elemColCount = elem.values.length;
+    } else if (Array.isArray(elem)) {
+      elemTypes[i] = ROW_ELEM_TYPES.ARRAY;
+      numRows++;
+      elemColCount = elem.length;
+    } else {
+      // treat object as scalar
+      elemTypes[i] = ROW_ELEM_TYPES.SCALAR;
+      numRows++;
+      elemColCount = numCols;
+    }
+    // Check column counts
+    if (numCols === -1) {
+      numCols = elemColCount;
+    } else if (numCols !== elemColCount) {
+      throw new Error('arguments imply differing number of columns: ' +
+        numCols + ', ' + elemColCount);
+    }
+  }
+  if (numRows === 0) {
+    return jd.df([]);
+  }
+  if (numCols === -1) {
+    numCols = 1;
+  }
+  var colNames = (colNameArr === null) ?
+    jd.repNa(numCols, 'string') :
+    newVector(colNameArr, 'string');
+
+  // Assign values for new data frame
+  var columns = allocArray(numCols);
+  for (j = 0; j < numCols; j++) {
+    columns[j] = allocArray(numRows);
+  }
+  var currRow = 0;
+  for (i = 0; i < arrLen; i++) {
+    elem = array[i];
+    switch (elemTypes[i]) {
+      case ROW_ELEM_TYPES.SCALAR:
+        for (j = 0; j < numCols; j++) {
+          columns[j][currRow] = elem;
+        }
+        currRow++;
+        break;
+      case ROW_ELEM_TYPES.VECTOR:
+        elem = elem.values;
+        /* falls through */
+      case ROW_ELEM_TYPES.ARRAY:
+        for (j = 0; j < numCols; j++) {
+          columns[j][currRow] = elem[j];
+        }
+        currRow++;
+        break;
+      case ROW_ELEM_TYPES.DATA_FRAME:
+        var nRow = elem.nRow();
+        for (j = 0; j < numCols; j++) {
+          for (var k = 0; k < nRow; k++) {
+            columns[j][currRow + k] = elem._cols[j].values[k];
+          }
+        }
+        currRow += nRow;
+        break;
+    }
+  }
+
+  return newDataFrame(columns, colNames);
+};
+
+
 jd.strCat = function() {
   var numArgs = arguments.length;
   if (numArgs === 0) {
@@ -633,10 +804,11 @@ dfProto.printToString = function(maxLines) {
 vectorProto._toTruncatedPrintVector = function(maxLines) {
   if (this.values.length > maxLines) {
     var halfCount = Math.ceil(maxLines / 2 - 1);
-    var headRange = jd.r(0, halfCount);
-    var tailRange = jd.r(-halfCount);
-    var printVec = this.s(jd.rCat(headRange, tailRange))._toPrintVector();
-    return jd.vCat(printVec.s(headRange), _SKIP_MARKER, printVec.s(tailRange));
+    var headRange = jd.rng(0, halfCount);
+    var tailRange = jd.rng(-halfCount);
+    var printVec = this.s(jd.rngCat(headRange, tailRange))._toPrintVector();
+    return jd.vCat(
+      printVec.s(headRange), _SKIP_MARKER, printVec.s(tailRange));
   } else {
     return this._toPrintVector();
   }
@@ -833,12 +1005,8 @@ vectorProto.s = function(selector) {
   if (intIdxVec === null) {
     return this;
   }
-  var intIdxArr = intIdxVec.values;
-  var result = allocArray(intIdxArr.length);
-  for (var i = 0; i < intIdxArr.length; i++) {
-    result[i] = this.values[intIdxArr[i]];
-  }
-  return newVector(result, this.dtype);
+  var newArray = subsetArray(this.values, intIdxVec.values);
+  return newVector(newArray, this.dtype);
 };
 
 
@@ -876,7 +1044,7 @@ vectorProto.head = function(n) {
     n = 6;
   }
   validateInt(n, 'n');
-  return this.s(jd.r(0, n));
+  return this.s(jd.rng(0, n));
 };
 
 
@@ -886,7 +1054,7 @@ vectorProto.tail = function(n) {
   }
   validateInt(n, 'n');
   var start = (n < 0) ? -n : this.size() - n;
-  return this.s(jd.r(start, undefined));
+  return this.s(jd.rng(start, undefined));
 };
 
 
@@ -2009,7 +2177,7 @@ dfProto.toObjArray = function() {
   var numColsUsed = colNameArr.length;
   var objArray = allocArray(nRow);
   for (var i = 0; i < nRow; i++) {
-    var rowObj = Object.create(null);
+    var rowObj = {};
     for (var j = 0; j < numColsUsed; j++) {
       rowObj[colNameArr[j]] = this._cols[colIdx[j]].values[i];
     }
@@ -2072,9 +2240,144 @@ dfProto.resetNames = function() {
 * Subset Selection / Modification
 */
 
+dfProto.s = function(rowSelect, colSelect) {
+  rowSelect = isUndefined(rowSelect) ? null : rowSelect;
+  colSelect = isUndefined(colSelect) ? null : colSelect;
+  var rowIdxVec = standardIndexing(rowSelect, this.nRow());
+  var colIdxVec = columnIndexing(colSelect, this._names, this._dtypesVector());
+
+  var colNames = this._names.values;
+  var columns = this._cols;
+  if (colIdxVec !== null) {
+    colNames = subsetArray(colNames, colIdxVec.values);
+    columns = subsetArray(columns, colIdxVec.values);
+  }
+  colNames = newVector(colNames, 'string');
+
+  if (rowIdxVec !== null) {
+    if (colIdxVec === null) {
+      // Need to make a copy before modifying columns array
+      columns = columns.slice();
+    }
+    for (var i = 0; i < columns.length; i++) {
+      var dtype = columns[i].dtype;
+      var newArray = subsetArray(columns[i].values, rowIdxVec.values);
+      columns[i] = newVector(newArray, dtype);
+    }
+  }
+  return newDataFrame(columns, colNames, false);
+};
+
+
+dfProto.sMod = function(rowSelect, colSelect, values) {
+  var valuesIsDataFrame = (
+    !isUndefined(values) &&
+    values !== null &&
+    values.type === dfProto.type
+  );
+  if (!valuesIsDataFrame) {
+    values = ensureScalar(values);
+  }
+
+  rowSelect = isUndefined(rowSelect) ? null : rowSelect;
+  colSelect = isUndefined(colSelect) ? null : colSelect;
+  var rowIdxVec = standardIndexing(rowSelect, this.nRow());
+  var colIdxVec = columnIndexing(colSelect, this._names, this._dtypesVector());
+  if (colIdxVec === null) {
+    colIdxVec = jd.seq(this.nCol());
+  }
+
+  validateUniqueColInds(colIdxVec);
+  if (valuesIsDataFrame) {
+    var numRowsSelected = (rowIdxVec === null) ? this.nRow() : rowIdxVec.size();
+    if (numRowsSelected !== values.nRow() ||
+      colIdxVec.size() !== values.nCol()) {
+      throw new Error('"values" has the wrong dimensions for selection');
+    }
+  }
+
+  var columns = this._cols.slice();
+  for (var i = 0; i < colIdxVec.values.length; i++) {
+    var colIdx = colIdxVec.values[i];
+    var newValue = valuesIsDataFrame ? values._cols[i] : values;
+    columns[colIdx] = (rowIdxVec !== null) ?
+      columns[colIdx].sMod(rowIdxVec, newValue) :
+      (valuesIsDataFrame ? newValue : jd.rep(newValue, this.nRow()));
+  }
+  return newDataFrame(columns, this.names(), false);
+};
+
+
 dfProto.c = function(colSelect) {
   var intIdx = singleColNameLookup(colSelect, this._names);
   return this._cols[intIdx];
+};
+
+
+dfProto.cMod = function(colSelect, colValue) {
+  var columns = this._cols.slice();
+  var colNames = this._names;
+  if (isString(colSelect) && !this._names.contains(colSelect)) {
+    // Insert new column at the end
+    columns.push(colValue);
+    var colNameArr = colNames.values.slice();
+    colNameArr.push(colSelect);
+    colNames = newVector(colNameArr, 'string');
+  } else {
+    var intIdx = singleColNameLookup(colSelect, this._names);
+    columns[intIdx] = colValue;
+  }
+  return newDataFrame(columns, colNames);
+};
+
+
+dfProto.insertCol = function(colName, colValue, index) {
+  colName = coerceToStr(colName);
+  index = isUndefined(index) ? this._cols.length : index;
+  index = ensureScalar(index);
+  if (!Number.isInteger(index)) {
+    throw new Error('expected "index" to be an integer but got: ' + index);
+  }
+
+  var columns = this._cols.slice();
+  var colNameArr = this._names.values.slice();
+  columns.splice(index, 0, colValue);
+  colNameArr.splice(index, 0, colName);
+  return newDataFrame(columns, newVector(colNameArr, 'string'));
+};
+
+
+dfProto.at = function(i, j) {
+  i = ensureScalar(i);
+  i = resolveIntIdx(i, this.nRow());
+  j = ensureScalar(j);
+  if (isNumber(j)) {
+    j = resolveIntIdx(j, this.nCol());
+  } else if (isString(j) || j === null) {
+    j = singleColNameLookup(j, this._names);
+  } else {
+    throw new Error('expected "j" to be an integer or string but got: ' + j);
+  }
+  return this._cols[j].values[i];
+};
+
+
+dfProto.head = function(n) {
+  if (isUndefined(n)) {
+    n = 6;
+  }
+  validateInt(n, 'n');
+  return this.s(jd.rng(0, n));
+};
+
+
+dfProto.tail = function(n) {
+  if (isUndefined(n)) {
+    n = 6;
+  }
+  validateInt(n, 'n');
+  var start = (n < 0) ? -n : this.nRow() - n;
+  return this.s(jd.rng(start, undefined));
 };
 
 
@@ -2096,11 +2399,17 @@ dfProto.c = function(colSelect) {
 * Range
 */
 
-jd.r = function(start, stop, includeStop) {
+jd.rng = function(start, stop, includeStop) {
   includeStop = isUndefined(includeStop) ? null : includeStop;
 
   if (includeStop !== null && typeof includeStop !== 'boolean') {
     throw new Error('"includeStop" must be either true, false, or null');
+  }
+  var mixingNumAndStr = (isNumber(start) && isString(stop)) ||
+    (isString(start) && isNumber(stop));
+  if (mixingNumAndStr && includeStop === null) {
+    throw new Error('"includeStop" must be set to either true or false ' +
+      'when mixing numbers and strings for start/stop');
   }
 
   var range = Object.create(rangeProto);
@@ -2120,13 +2429,15 @@ rangeProto.ex = function() {
 * RangeCat
 */
 
-jd.rCat = function() {
+jd.rngCat = function() {
   var numArgs = arguments.length;
   var args = allocArray(numArgs);
   for (var i = 0; i < numArgs; i++) {
     var arg = arguments[i];
     if (arg.type === exclusionProto.type) {
-      throw new Error('rCat must not contain any exclusions');
+      throw new Error('rngCat must not contain any exclusions');
+    } else if (arg.type === byDtypeProto.type) {
+      throw new Error('rngCat must not contain any ByDtype objects');
     }
     args[i] = arg;
   }
@@ -2138,6 +2449,31 @@ jd.rCat = function() {
 
 
 rangeCatProto.ex = function() {
+  return jd.ex(this);
+};
+
+
+/*-----------------------------------------------------------------------------
+* ByDtype
+*/
+
+var VALID_DTYPES_VEC = jd.vector(Object.keys(VALID_DTYPES));
+
+jd.byDtype = function(dtypes) {
+  dtypes = ensureVector(dtypes);
+  validateVectorIsDtype(dtypes, 'string');
+  dtypes = dtypes.unique();
+  var isValidDtype = dtypes.isIn(VALID_DTYPES_VEC);
+  if (!isValidDtype.all()) {
+    var invalidDtype = dtypes.s(isValidDtype.not()).at(0);
+    throw new Error('invalid dtype: ""' + invalidDtype + '"');
+  }
+  var byDtype = Object.create(byDtypeProto);
+  byDtype._dtypes = dtypes;
+  return byDtype;
+};
+
+byDtypeProto.ex = function() {
   return jd.ex(this);
 };
 
@@ -2207,10 +2543,10 @@ function columnIndexing(selector, colNames, dtypes) {
     return null;
   }
   if (selector.type === exclusionProto.type) {
-    var intIdxVector = columnIdxHelper(selector._selector, colNames);
+    var intIdxVector = columnIdxHelper(selector._selector, colNames, dtypes);
     return excludeIntIndices(intIdxVector, colNames.size());
   } else {
-    return columnIdxHelper(selector, colNames);
+    return columnIdxHelper(selector, colNames, dtypes);
   }
 }
 function columnIdxHelper(selector, colNames, dtypes) {
@@ -2226,7 +2562,9 @@ function columnIdxHelper(selector, colNames, dtypes) {
   }
 
   // Handle ByDtype case if applicable
-  // TODO
+  if (selector.type === byDtypeProto.type) {
+    return dtypes.isIn(selector._dtypes).which();
+  }
 
   // Handle integer index / col name lookup hybrid
   var opts = resolverOpts(RESOLVE_MODE.COL, maxLen, colNames._getIndex());
@@ -2460,7 +2798,7 @@ function processLookupResults(intInds, key, opts, resultArr) {
 // Returns the integer index of the first occurrence of a single column
 // name or throws an error if 'selector' is invalid or no occurrence is found.
 // 'selector' can be a single integer or string expressed as a scalar,
-// array, or vector.  'colNames' must be a string vector1
+// array, or vector.  'colNames' must be a string vector
 function singleColNameLookup(selector, colNames) {
   if (isUndefined(selector)) {
     throw new Error('selector must not be undefined');
@@ -2964,6 +3302,17 @@ function cumulativeReduce(array, naValue, func) {
 }
 
 
+// Uses the integer indexes in 'intIdx' to subset 'array', returning
+// the results.  All indices in 'intIdx' are assumed to be in bounds.
+function subsetArray(array, intIdx) {
+  var result = allocArray(intIdx.length);
+  for (var i = 0; i < intIdx.length; i++) {
+    result[i] = array[intIdx[i]];
+  }
+  return result;
+}
+
+
 /*-----------------------------------------------------------------------------
 * DataFrame helpers
 */
@@ -2971,6 +3320,14 @@ function cumulativeReduce(array, naValue, func) {
 // Returns a string vector of length 'numCols' with default column names
 function generateColNames(numCols) {
   return jd.strCat('c', jd.seq(numCols));
+}
+
+// Throws an error if colIdxVec contains any duplicates
+function validateUniqueColInds(colIdxVec) {
+  if (colIdxVec.nUnique() !== colIdxVec.values.length) {
+    throw new Error('duplicate occurrence of one or more columns ' +
+      'in selection');
+  }
 }
 
 // Creates a new data frame with the given 'columns' array and 'colNames'
@@ -2985,16 +3342,16 @@ function newDataFrame(columns, colNames, validateCols) {
 
   validateCols = isUndefined(validateCols) ? true : validateCols;
   if (validateCols) {
-    columns = columns.map(function(v) { return ensureVector(v); });
     var nRow = 1;
     for (i = 0; i < nCol; i++) {
+      columns[i] = ensureVector(columns[i]);
       var colLen = columns[i].values.length;
       if (colLen !== 1) {
         if (nRow === 1) {
           nRow = colLen;
         } else if (colLen !== nRow) {
           throw new Error('incompatible column lengths found during ' +
-            'data frame construction');
+            'data frame construction: ' + nRow + ', ' + colLen);
         }
       }
     }
@@ -3332,15 +3689,6 @@ function ensureStringVector(values) {
 /*-----------------------------------------------------------------------------
 * Utilities
 */
-
-function readOnlyEnumProp(value) {
-  return {
-    enumerable: true,
-    configurable: false,
-    writable: false,
-    value: value
-  };
-}
 
 function isNumber(obj) {
   return typeof obj === 'number';
