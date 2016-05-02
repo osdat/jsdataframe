@@ -720,6 +720,24 @@ describe('data frame methods:', function() {
           expect(df5.nCol()).toBe(0);
         }
       );
+
+      it('preserves column dtypes even if only missing values are selected',
+        function() {
+          var exampleDf3 = jd.dfFromMatrix([
+            [0, 'a', true],
+            [1, 'b', false],
+            [2, 'c', true],
+            [NaN, null, null]
+          ]);
+          var df = exampleDf3.s(-1);
+          expect(df.nRow()).toBe(1);
+          expect(df.nCol()).toBe(3);
+          expect(df.toMatrix()[0]).toEqual([NaN, null, null]);
+          expect(df.dtypes().c('dtype').values).toEqual(
+            ['number', 'string', 'boolean']
+          );
+        }
+      );
     });
 
     describe('df.sMod', function() {
@@ -1469,6 +1487,10 @@ describe('data frame methods:', function() {
 
     var uniqTestDf2 = jd.colCat(uniqTestDf, {C: jd.rep({}, 6)});
 
+    var uniqTest1ColDf = jd.df([
+      jd.vector([2, NaN, 0, 2, 2, NaN, 1, 1, NaN, NaN])
+    ]);
+
     describe('df.unique', function() {
       it('keeps the first occurrence of unique rows', function() {
         var expectedDf = jd.df([
@@ -1480,6 +1502,12 @@ describe('data frame methods:', function() {
 
       it('does not alter data frames with unique rows', function() {
         expect(exampleDf1.unique().equals(exampleDf1)).toBe(true);
+      });
+
+      it('works for 1-column data frames', function() {
+        expect(uniqTest1ColDf.unique().c(0).values).toEqual(
+          [2, NaN, 0, 1]
+        );
       });
 
       it('works for 0-row data frames', function() {
@@ -1499,6 +1527,10 @@ describe('data frame methods:', function() {
       it('returns the number of unique rows', function() {
         expect(uniqTestDf.nUnique()).toBe(4);
         expect(exampleDf1.nUnique()).toBe(5);
+      });
+
+      it('works for 1-column data frames', function() {
+        expect(uniqTest1ColDf.nUnique()).toBe(4);
       });
 
       it('works for 0-row data frames', function() {
@@ -1532,6 +1564,22 @@ describe('data frame methods:', function() {
         );
       });
 
+      it('works for 1-column data frames', function() {
+        // [2, NaN, 0, 2, 2, NaN, 1, 1,   NaN, NaN]
+        expect(uniqTest1ColDf.duplicated().values).toEqual(
+          [false, false, false, true, true, true, false, true, true, true]
+        );
+        expect(uniqTest1ColDf.duplicated('first').values).toEqual(
+          [false, false, false, true, true, true, false, true, true, true]
+        );
+        expect(uniqTest1ColDf.duplicated('last').values).toEqual(
+          [true, true, false, true, false, true, true, false, true, false]
+        );
+        expect(uniqTest1ColDf.duplicated(false).values).toEqual(
+          [true, true, false, true, true, true, true, true, true, true]
+        );
+      });
+
       it('works for 0-row data frames', function() {
         expect(jd.df([]).duplicated().values).toEqual([]);
         expect(jd.df([jd.seq(0), jd.seq(0)]).duplicated().values).toEqual([]);
@@ -1553,6 +1601,500 @@ describe('data frame methods:', function() {
         }).toThrowError(/object/);
       });
     });
+  });
+
+  describe('grouping:', function() {
+    var groupTestDf = jd.dfFromMatrixWithHeader([
+      ['A', 'B', 'C',   'D'],
+      [ 0,   1,  'a',  true],
+      [ 1,   1,  'b', false],
+      [ 2,   2,  'b',  true],
+      [ 3,   2,  'a', false],
+      [ 4,   0,  'a',  true],
+      [ 5,   0, null, false],
+    ]);
+
+    var rowCount = function(df) {
+      return df.nRow();
+    };
+
+    describe('df.groupApply', function() {
+
+      it('works for scalar return values (plus "colNames")', function() {
+        var df1 = groupTestDf.groupApply('C', rowCount, 'count');
+        var expectedDf1 = jd.dfFromMatrixWithHeader([
+          [ 'C', 'count'],
+          [ 'a',      3 ],
+          [ 'b',      2 ],
+          [null,      1 ],
+        ]);
+        expect(df1.equals(expectedDf1)).toBe(true);
+        var df1NullName = groupTestDf.groupApply('C', rowCount);
+        expect(df1NullName.resetNames().equals(df1.resetNames())).toBe(true);
+        expect(df1NullName.names().values).toEqual(['C', null]);
+
+        var df2 = groupTestDf.groupApply(['C', 'D'], rowCount, 'count');
+        var expectedDf2 = jd.dfFromMatrixWithHeader([
+          [ 'C',   'D', 'count'],
+          [ 'a',  true,      2 ],
+          [ 'b', false,      1 ],
+          [ 'b',  true,      1 ],
+          [ 'a', false,      1 ],
+          [null, false,      1 ],
+        ]);
+        expect(df2.equals(expectedDf2)).toBe(true);
+      });
+
+      it('works for vector/array return values; groupKey and groupSubset ' +
+        'are up to spec', function() {
+
+          // Check groupKey dimensions and content
+
+          var func1 = function(subset, key) {
+            return [
+              key.nRow(),
+              key.nCol(),
+              key.at(0, 'D'),
+              key.at(0, 'C'),
+            ];
+          };
+          var df1 = groupTestDf.groupApply(['D', 'C'], func1,
+            ['keyNRow', 'keyNCol', 'D_repeat', 'C_repeat']);
+          expect(df1.names().values).toEqual(
+            ['D', 'C', 'keyNRow', 'keyNCol', 'D_repeat', 'C_repeat']
+          );
+          expect(df1.c('D').values).toEqual([true, false, true, false, false]);
+          expect(df1.c('C').values).toEqual(['a', 'b', 'b', 'a', null]);
+          expect(df1.c('keyNRow').equals(jd.rep(1, 5))).toBe(true);
+          expect(df1.c('keyNCol').equals(jd.rep(2, 5))).toBe(true);
+          expect(df1.c('D').equals(df1.c('D_repeat'))).toBe(true);
+          expect(df1.c('C').equals(df1.c('C_repeat'))).toBe(true);
+
+          var df1NullName = groupTestDf.groupApply(['D', 'C'], func1);
+          expect(df1NullName.resetNames().equals(df1.resetNames())).toBe(true);
+          expect(df1NullName.names().values).toEqual(
+            ['D', 'C', null, null, null, null]
+          );
+
+          // Check groupSubset row ordering
+
+          var df2 = groupTestDf.groupApply('C', function(subset) {
+            // Return first row as vector
+            return subset.transpose().c(0);
+          }, ['A', 'B', 'D']);
+          var expectedDf2 = jd.dfFromMatrixWithHeader([
+            [ 'C', 'A', 'B',   'D'],
+            [ 'a',  0 ,  1 ,  true],
+            [ 'b',  1 ,  1 , false],
+            [null,  5 ,  0 , false],
+          ]);
+          expect(df2.equals(expectedDf2)).toBe(true);
+
+          var df3 = groupTestDf.groupApply('C', function(subset) {
+            // Return last row as vector
+            return subset.transpose().c(-1);
+          }, ['A', 'B', 'D']);
+          var expectedDf3 = jd.dfFromMatrixWithHeader([
+            [ 'C', 'A', 'B',   'D'],
+            [ 'a',  4 ,  0 ,  true],
+            [ 'b',  2 ,  2 ,  true],
+            [null,  5 ,  0 , false],
+          ]);
+          expect(df3.equals(expectedDf3)).toBe(true);
+        }
+      );
+
+      it('works for aggregation to 1-row data frames', function() {
+        var colMeanFunc = function(subset) {
+          // Return column averages for number columns
+          return subset.mapCols(jd.byDtype('number'), function(v) {
+            return v.mean();
+          });
+        };
+        var df1 = groupTestDf.groupApply('D', colMeanFunc);
+        var expectedDf1 = jd.dfFromMatrixWithHeader([
+          [  'D', 'A', 'B'],
+          [ true,  2 ,  1 ],
+          [false,  3 ,  1 ],
+        ]);
+        expect(df1.equals(expectedDf1)).toBe(true);
+        var df1WithNames = groupTestDf.groupApply('D', colMeanFunc,
+          ['A_mean', 'B_mean']);
+        expect(df1WithNames.names().values).toEqual(['D', 'A_mean', 'B_mean']);
+        expect(df1WithNames.resetNames().equals(df1.resetNames())).toBe(true);
+      });
+
+      it('works for return values with mixed row count, including undefined',
+        function() {
+          var removeNullKeysFunc = function(subset, key) {
+            return (key.dropNa().nRow() === 0) ? undefined : subset;
+          };
+          var df1 = groupTestDf.groupApply(['C', 'D'], removeNullKeysFunc);
+          var expectedDf1 = jd.dfFromMatrixWithHeader([
+            [ 'C',   'D', 'A', 'B'],
+            [ 'a',  true,  0,   1 ],
+            [ 'a',  true,  4,   0 ],
+            [ 'b', false,  1,   1 ],
+            [ 'b',  true,  2,   2 ],
+            [ 'a', false,  3,   2 ],
+          ]);
+          expect(df1.equals(expectedDf1)).toBe(true);
+
+          var df2 = groupTestDf.groupApply('C', removeNullKeysFunc);
+          var expectedDf2 = jd.dfFromMatrixWithHeader([
+            [ 'C', 'A', 'B',   'D'],
+            [ 'a',  0,   1 ,  true],
+            [ 'a',  3,   2 , false],
+            [ 'a',  4,   0 ,  true],
+            [ 'b',  1,   1 , false],
+            [ 'b',  2,   2 ,  true],
+          ]);
+          expect(df2.equals(expectedDf2)).toBe(true);
+        }
+      );
+
+      it('returns a 0-row data frame if "func" returns undefined for all calls',
+        function() {
+          var df1 = groupTestDf.groupApply(['C', 'D'], function() {
+            return undefined;
+          });
+          var expectedDf1 = jd.df([
+            jd.vector([], 'string'),
+            jd.vector([], 'boolean')
+          ], ['C', 'D']);
+          expect(df1.equals(expectedDf1)).toBe(true);
+        }
+      );
+
+      it('throws an error if "colSelect" selects any "object" columns',
+        function() {
+          var groupTestDf2 = groupTestDf.insertCol('E', jd.rep({}, 6));
+          expect(function() {
+            groupTestDf2.groupApply(['C', 'E'], rowCount);
+          }).toThrowError(/object/);
+        }
+      );
+
+      it('throws an error if "colSelect" selects columns more than once',
+        function() {
+          expect(function() {
+            groupTestDf.groupApply(['C', 'D', 'C'], rowCount);
+          }).toThrowError(/duplicate/);
+        }
+      );
+
+      it('throws an error if no columns are selected by "colSelect"',
+        function() {
+          expect(function() {
+            groupTestDf.groupApply([], rowCount);
+          }).toThrowError(/colSelect/);
+        }
+      );
+
+      it('throws an error if "colSelect" selects every column in the ' +
+        'data frame',
+        function() {
+          expect(function() {
+            groupTestDf.groupApply(groupTestDf.names(), rowCount);
+          }).toThrowError(/colSelect/);
+        }
+      );
+
+      it('throws an error if "func" is not a function', function() {
+        expect(function() {
+          groupTestDf.groupApply('C');
+        }).toThrowError(/function/);
+
+        expect(function() {
+          groupTestDf.groupApply('C', 'not a function');
+        }).toThrowError(/function/);
+      });
+
+      it('throws an error if "func" return values imply inconsistent ' +
+        'column counts',
+        function() {
+          var rowCountExpand = function(df) {
+            return jd.seq(df.nRow());
+          };
+          expect(function() {
+            groupTestDf.groupApply('C', rowCountExpand);
+          }).toThrowError(/column counts/);
+        }
+      );
+
+      it('throws an error if "colNames" has the wrong length',
+        function() {
+          expect(function() {
+            groupTestDf.groupApply('C', rowCount, ['too', 'many', 'names']);
+          }).toThrowError(/colNames/);
+        }
+      );
+    });
+  });
+
+  describe('reshaping and sorting:', function() {
+
+    describe('df.transpose', function() {
+
+      it('works without specifying any arguments', function() {
+        var expectedDf = jd.dfFromMatrix([
+          [0, 1, 2, 3, 4],
+          ['a', 'b', 'c', 'd', 'e'],
+          [10, 10, 10, 10, 10]
+        ]);
+        var df = exampleDf1.transpose();
+        expect(df.equals(expectedDf)).toBe(true);
+        expect(df.dtypes().c('dtype').equals(jd.rep('object', 5))).toBe(true);
+
+        expect(df.transpose().equals(exampleDf1.resetNames())).toBe(true);
+      });
+
+      it('works with "preservedColName" argument specified', function() {
+        var expectedDf = jd.dfFromMatrixWithHeader([
+          ['preservedColName', 'c0', 'c1', 'c2', 'c3', 'c4'],
+          ['A', 0, 1, 2, 3, 4],
+          ['B', 'a', 'b', 'c', 'd', 'e'],
+          ['C', 10, 10, 10, 10, 10]
+        ]);
+        var df = exampleDf1.transpose('preservedColName');
+        expect(df.equals(expectedDf)).toBe(true);
+        expect(df.c(0).equals(exampleDf1.names())).toBe(true);
+
+        expect(df.transpose(null, 'preservedColName').equals(exampleDf1))
+          .toBe(true);
+      });
+
+      it('works with "headerSelector" argument specified', function() {
+        var expectedDf = jd.dfFromMatrixWithHeader([
+          ['a', 'b', 'c', 'd', 'e'],
+          [0, 1, 2, 3, 4],
+          [10, 10, 10, 10, 10]
+        ]);
+        var df = exampleDf1.transpose(null, 'B');
+        expect(df.equals(expectedDf)).toBe(true);
+        expect(df.names().equals(exampleDf1.c('B'))).toBe(true);
+        expect(df.allDtype).toBe('number');
+      });
+
+      it('works with both arguments specified', function() {
+        var expectedDf = jd.dfFromMatrixWithHeader([
+          ['oldHeader', 'a', 'b', 'c', 'd', 'e'],
+          ['A', 0, 1, 2, 3, 4],
+          ['C', 10, 10, 10, 10, 10]
+        ]);
+        var df1 = exampleDf1.transpose('oldHeader', 'B');
+        expect(df1.equals(expectedDf)).toBe(true);
+
+        var df2 = df1.transpose('B', 0);
+        expect(df2.nCol()).toBe(3);
+        expect(df2.s(null, ['A', 'B', 'C']).equals(exampleDf1)).toBe(true);
+      });
+
+      it('works for 0-row data frames', function() {
+        expect(jd.df([]).transpose().equals(jd.df([]))).toBe(true);
+        expect(jd.df([[], []]).transpose().equals(jd.df([]))).toBe(true);
+      });
+
+      it('throws an error if "preservedColName" is invalid type', function() {
+        expect(function() {
+          exampleDf1.transpose(10);
+        }).toThrowError(/preservedColName/);
+      });
+    });
+
+    describe('df.sort', function() {
+      var sortTestDf = jd.dfFromMatrixWithHeader([
+        ['A', 'B', 'C'],
+        [ 0,   1,  'a'],
+        [ 1,   1,  'b'],
+        [ 2,   2,  'b'],
+        [ 3,   2,  'a'],
+        [ 4,   0,  'a'],
+        [ 5,   0, null],
+      ]);
+
+      it('works when sorting with just 1 column', function(){
+        expect(sortTestDf.sort('A').equals(sortTestDf)).toBe(true);
+        var expectedDf1 = sortTestDf.mapCols(function(v) {
+          return v.reverse();
+        });
+        expect(sortTestDf.sort(0, false).equals(expectedDf1)).toBe(true);
+
+        var expectedDf2 = jd.dfFromMatrixWithHeader([
+          ['A', 'B', 'C'],
+          [ 4,   0,  'a'],
+          [ 5,   0, null],
+          [ 0,   1,  'a'],
+          [ 1,   1,  'b'],
+          [ 2,   2,  'b'],
+          [ 3,   2,  'a'],
+        ]);
+        expect(sortTestDf.sort('B').equals(expectedDf2)).toBe(true);
+
+        var expectedDf3 = jd.dfFromMatrixWithHeader([
+          ['A', 'B', 'C'],
+          [ 2,   2,  'b'],
+          [ 3,   2,  'a'],
+          [ 0,   1,  'a'],
+          [ 1,   1,  'b'],
+          [ 4,   0,  'a'],
+          [ 5,   0, null],
+        ]);
+        expect(sortTestDf.sort('B', false).equals(expectedDf3)).toBe(true);
+
+        var expectedDf4 = jd.dfFromMatrixWithHeader([
+          ['A', 'B', 'C'],
+          [ 5,   0, null],
+          [ 0,   1,  'a'],
+          [ 3,   2,  'a'],
+          [ 4,   0,  'a'],
+          [ 1,   1,  'b'],
+          [ 2,   2,  'b'],
+        ]);
+        expect(sortTestDf.sort('C').equals(expectedDf4)).toBe(true);
+
+        var expectedDf5 = jd.dfFromMatrixWithHeader([
+          ['A', 'B', 'C'],
+          [ 1,   1,  'b'],
+          [ 2,   2,  'b'],
+          [ 0,   1,  'a'],
+          [ 3,   2,  'a'],
+          [ 4,   0,  'a'],
+          [ 5,   0, null],
+        ]);
+        expect(sortTestDf.sort('C', false).equals(expectedDf5)).toBe(true);
+      });
+
+      it('works when sorting with multiple column', function(){
+        expect(sortTestDf.sort([0, 1, 2]).equals(sortTestDf)).toBe(true);
+
+        var expectedDf1 = jd.dfFromMatrixWithHeader([
+          ['A', 'B', 'C'],
+          [ 5,   0, null],
+          [ 4,   0,  'a'],
+          [ 0,   1,  'a'],
+          [ 1,   1,  'b'],
+          [ 3,   2,  'a'],
+          [ 2,   2,  'b'],
+        ]);
+        expect(sortTestDf.sort(['B', 'C']).equals(expectedDf1)).toBe(true);
+        expect(sortTestDf.sort(['B', 'C'], [true, true])
+          .equals(expectedDf1)).toBe(true);
+
+        var expectedDf2 = expectedDf1.mapCols(function(v) {
+          return v.reverse();
+        });
+        expect(sortTestDf.sort(jd.rng('B', 'C'), false)
+          .equals(expectedDf2)).toBe(true);
+        expect(sortTestDf.sort(jd.rng('B', 'C'), [false, false])
+          .equals(expectedDf2)).toBe(true);
+
+        var expectedDf3 = jd.dfFromMatrixWithHeader([
+          ['A', 'B', 'C'],
+          [ 5,   0, null],
+          [ 4,   0,  'a'],
+          [ 0,   1,  'a'],
+          [ 3,   2,  'a'],
+          [ 1,   1,  'b'],
+          [ 2,   2,  'b'],
+        ]);
+        expect(sortTestDf.sort(['C', 'B']).equals(expectedDf3)).toBe(true);
+
+        var expectedDf4 = jd.dfFromMatrixWithHeader([
+          ['A', 'B', 'C'],
+          [ 5,   0, null],
+          [ 3,   2,  'a'],
+          [ 0,   1,  'a'],
+          [ 4,   0,  'a'],
+          [ 2,   2,  'b'],
+          [ 1,   1,  'b'],
+        ]);
+        expect(sortTestDf.sort(['C', 'B'], [true, false])
+          .equals(expectedDf4)).toBe(true);
+
+        var expectedDf5 = jd.dfFromMatrixWithHeader([
+          ['A', 'B', 'C'],
+          [ 1,   1,  'b'],
+          [ 2,   2,  'b'],
+          [ 4,   0,  'a'],
+          [ 0,   1,  'a'],
+          [ 3,   2,  'a'],
+          [ 5,   0, null],
+        ]);
+        expect(sortTestDf.sort(['C', 'B'], [false, true])
+          .equals(expectedDf5)).toBe(true);
+      });
+
+      it('gives stable results for underdetermined ordering', function() {
+        var sortTestDf2 = jd.colCat(
+          sortTestDf, {D: 10}, {E: true}
+        );
+
+        expect(sortTestDf2.sort(['D']).equals(sortTestDf2)).toBe(true);
+        expect(sortTestDf2.sort(['D', 'E']).equals(sortTestDf2)).toBe(true);
+        expect(sortTestDf2.sort(['E', 'D']).equals(sortTestDf2)).toBe(true);
+        expect(sortTestDf2.sort(['E', 'D'], false)
+          .equals(sortTestDf2)).toBe(true);
+        expect(sortTestDf2.sort(['E', 'D'], [false, true])
+          .equals(sortTestDf2)).toBe(true);
+      });
+
+      it('does not alter the data frame if no sort columns are selected',
+        function() {
+          var sortTestDf2 = sortTestDf.s(null, jd.rng('B', 'C'));
+          expect(sortTestDf2.sort([]).equals(sortTestDf2)).toBe(true);
+        }
+      );
+
+      it('throws an error if "colSelect" is undefined',
+        function() {
+          expect(function() {
+            sortTestDf.sort();
+          }).toThrowError(/colSelect/);
+        }
+      );
+
+      it('throws an error if the sort columns include "object" columns',
+        function() {
+          expect(function() {
+            jd.colCat(sortTestDf, {D: jd.rep({}, 6)}).sort(['A', 'D']);
+          }).toThrowError(/object/);
+        }
+      );
+
+      it('throws an error if "colSelect" selects columns more than once',
+        function() {
+          expect(function() {
+            sortTestDf.sort([0, 1, 0]);
+          }).toThrowError(/duplicate/);
+        }
+      );
+
+      it('throws an error if "ascending" has the wrong length or type',
+        function() {
+          expect(function() {
+            sortTestDf.sort('A', [true, false]);
+          }).toThrowError(/ascending/);
+
+          expect(function() {
+            sortTestDf.sort(['B', 'A', 'C'], [true, false]);
+          }).toThrowError(/ascending/);
+
+          expect(function() {
+            sortTestDf.sort(['A', 'B'], [true, null]);
+          }).toThrowError(/ascending/);
+
+          expect(function() {
+            sortTestDf.sort(['A', 'B'], [1, 2]);
+          }).toThrowError(/boolean/);
+
+          expect(function() {
+            sortTestDf.sort(['A', 'B'], 10);
+          }).toThrowError(/boolean/);
+        }
+      );
+    });
+
   });
 
 });

@@ -2533,12 +2533,191 @@ dfProto.duplicated = function(keep) {
 
 
 // Private helper for retrieving the multi-column index or creating one
-// if it's not yet present
+// if it's not yet present.  If this data frame contains only a single
+// column, just use the index for that column vector.
 dfProto._getIndex = function() {
+  if (this._cols.length === 1) {
+    return this._cols[0]._getIndex();
+  }
   if (this._index === null) {
     this._index = newNestedIndex(this._cols);
   }
   return this._index;
+};
+
+
+/*-----------------------------------------------------------------------------
+* Grouping
+*/
+
+dfProto.groupApply = function(colSelect, func, colNames) {
+  if (isUndefined(colSelect)) {
+    throw new Error('"colSelect" must not be undefined');
+  }
+  var colIdxVec = columnIndexing(colSelect, this._names, this._dtypesVector());
+  validateUniqueColInds(colIdxVec);
+  if (colIdxVec === null || colIdxVec.size() === this.nCol()) {
+    throw new Error('"colSelect" must not select every column in the ' +
+      'data frame');
+  } else if (colIdxVec.size() === 0) {
+    throw new Error('"colSelect" must select at least 1 column');
+  }
+  var nonKeyDf = this.s(null, colIdxVec.ex());
+  var groupKeyDf = this.s(null, colIdxVec);
+  validateDataFrameHasNoObjectCols(groupKeyDf);
+  var groupIndex = groupKeyDf._getIndex();
+  var uniqKeyDf = groupKeyDf.unique();
+
+  validateFunction(func, 'func');
+
+  if (!isUndefined(colNames)) {
+    colNames = ensureVector(colNames, 'string');
+    if (colNames.dtype !== 'string') {
+      colNames = colNames.toDtype('string');
+    }
+  }
+
+  // Apply 'func' to each group
+  var nRow = uniqKeyDf.nRow();
+  var groupResultArr = allocArray(nRow);
+  var funcNCols = -1;
+  var resultInd = 0;
+  for (var i = 0; i < nRow; i++) {
+    var keyDf = uniqKeyDf.s(i);   // could be optimized
+    var rowNums = groupIndex.lookup(uniqKeyDf._cols, i);
+    var subsetDf = nonKeyDf.s(rowNums);   // could be optimized
+    var groupResult = func(subsetDf, keyDf);
+    if (isUndefined(groupResult)) {
+      continue;
+    }
+    var colCount;
+    var colCatArr;
+    if (groupResult === null) {
+      colCount = 1;
+      colCatArr = [keyDf, groupResult];
+    } else if (groupResult.type === dfProto.type) {
+      colCount = groupResult.nCol();
+      colCatArr = [keyDf, groupResult];
+    } else if (groupResult.type === vectorProto.type) {
+      colCount = groupResult.size();
+      colCatArr = [keyDf].concat(groupResult.values);
+    } else if (Array.isArray(groupResult)) {
+      colCount = groupResult.length;
+      colCatArr = [keyDf].concat(groupResult);
+    } else {
+      colCount = 1;
+      colCatArr = [keyDf, groupResult];
+    }
+    if (funcNCols === -1) {
+      funcNCols = colCount;
+      if (!isUndefined(colNames) && colCount !== colNames.size()) {
+        throw new Error('length of "colNames" must match implied number ' +
+          'of columns returned by "func"');
+      }
+    } else if (colCount !== funcNCols) {
+      throw new Error('inconsistent implied column counts returned from ' +
+        '"func": ' + funcNCols + ', ', + colCount);
+    }
+    groupResultArr[resultInd] = jd._colCatArray(colCatArr); // could be optimized
+    resultInd++;
+  }
+  if (resultInd === 0) {
+    return uniqKeyDf.s([]);
+  }
+  if (groupResultArr.length !== resultInd) {
+    groupResultArr.length = resultInd;
+  }
+
+  // Combine results
+  var resultDf = jd._rowCatArray(groupResultArr);
+  if (!isUndefined(colNames)) {
+    var resultNames = resultDf.names();
+    resultNames = resultNames.sMod(jd.rng(colIdxVec.size()), colNames);
+    resultDf = resultDf.setNames(resultNames);
+  }
+  return resultDf;
+};
+
+
+/*-----------------------------------------------------------------------------
+* Reshaping and Sorting
+*/
+
+dfProto.transpose = function(preservedColName, headerSelector) {
+  if (this.nRow() === 0) {
+    return jd.df([]);
+  }
+  preservedColName = isUndefined(preservedColName) ? null : preservedColName;
+  if (preservedColName !== null && !isString(preservedColName)) {
+    throw new Error('"preservedColName" must be a string when not null or ' +
+      'undefined');
+  }
+
+  var nRowOrig = this.nRow();
+  var dfToTranspose;
+  var colNames;
+  if (!isUndefined(headerSelector)) {
+    var intIdx = singleColNameLookup(headerSelector, this._names);
+    dfToTranspose = this.s(null, jd.ex(intIdx));
+    colNames = this.c(intIdx);
+    if (colNames.dtype !== 'string') {
+      colNames = colNames.toDtype('string');
+    }
+  } else {
+    dfToTranspose = this;
+    colNames = generateColNames(nRowOrig);
+  }
+
+  var offset;
+  var columns;
+  if (preservedColName !== null) {
+    colNames = jd.vCat(preservedColName, colNames);
+    offset = 1;
+    columns = allocArray(nRowOrig + 1);
+    columns[0] = dfToTranspose._names;
+  } else {
+    offset = 0;
+    columns = allocArray(nRowOrig);
+  }
+  var nCol = dfToTranspose.nCol();
+  for (var j = 0; j < nRowOrig; j++) {
+    var newCol = allocArray(nCol);
+    for (var i = 0; i < nCol; i++) {
+      newCol[i] = dfToTranspose._cols[i].values[j];
+    }
+    columns[j + offset] = newCol;
+  }
+
+  return newDataFrame(columns, colNames);
+};
+
+
+dfProto.sort = function(colSelect, ascending) {
+  if (isUndefined(colSelect)) {
+    throw new Error('"colSelect" must not be undefined');
+  }
+
+  var colIdxVec = columnIndexing(colSelect, this._names, this._dtypesVector());
+  if (colIdxVec === null) {
+    colIdxVec = jd.seq(this.nCol());
+  } else {
+    validateUniqueColInds(colIdxVec);
+  }
+  var sortDf = this.s(null, colIdxVec);
+  validateDataFrameHasNoObjectCols(sortDf);
+
+  ascending = isUndefined(ascending) ? true : ascending;
+  ascending = ensureVector(ascending, 'boolean');
+  validateVectorIsDtype(ascending, 'boolean');
+  if (ascending.isNa().any()) {
+    throw new Error('"ascending" must not contain missing values');
+  }
+  if (ascending.size() === 1) {
+    ascending = jd.rep(ascending, sortDf.nCol());
+  }
+
+  var argSortIdxArray = argSort(sortDf._cols, ascending.values);
+  return this.s(argSortIdxArray);
 };
 
 
@@ -3162,7 +3341,7 @@ function cleanKey(key, dtype) {
 
 
 // Creates a new NestedIndex for the given 'vectors' array (which may contain
-// only a single element to index a single vector).
+// a single element to index a single vector).
 function newNestedIndex(vectors) {
   var arity = vectors.length;
   if (arity === 0) {
@@ -3731,6 +3910,10 @@ function compare(a, b) {
 jd._private_export.compare = compare;
 
 
+// The reverse of "compare"
+var compareReverse = reverseComp(compare);
+
+
 // Returns a new compare function for Array.prototype.sort() that
 // reverses the order of the given compareFunc
 function reverseComp(compareFunc) {
@@ -3739,6 +3922,47 @@ function reverseComp(compareFunc) {
   };
 }
 jd._private_export.reverseComp = reverseComp;
+
+
+// Returns an array of integer indices that would sort the given array of
+// vectors, starting with the first vector, then the second, etc.
+// "ascending" must be an array of booleans with the same length as "vectors".
+// Returns null if "vectors" is empty.
+function argSort(vectors, ascending) {
+  if (vectors.length !== ascending.length) {
+    throw new Error('length of "ascending" must match the number of ' +
+      'sort columns');
+  }
+  if (vectors.length === 0) {
+    return null;
+  }
+  var nRow = vectors[0].size();
+  var result = allocArray(nRow);
+  for (var i = 0; i < nRow; i++) {
+    result[i] = i;
+  }
+
+  // Create composite compare function
+  var compareFuncs = ascending.map(function(asc) {
+    return asc ? compare : compareReverse;
+  });
+  var compositeCompare = function(a, b) {
+    var result = 0;
+    for (var i = 0; i < compareFuncs.length; i++) {
+      var aValue = vectors[i].values[a];
+      var bValue = vectors[i].values[b];
+      result = compareFuncs[i](aValue, bValue);
+      if (result !== 0) {
+        return result;
+      }
+    }
+    // Order based on row index as last resort to ensure stable sorting
+    return compare(a, b);
+  };
+
+  result.sort(compositeCompare);
+  return result;
+}
 
 
 /*-----------------------------------------------------------------------------
@@ -3792,8 +4016,8 @@ function validateVectorIsNotDtype(vector, dtype) {
 // Returns undefined or throws an error if invalid
 function validateDataFrameHasNoObjectCols(df) {
   if (df._dtypesVector().contains('object')) {
-    throw new Error('unsupported operation for data frame containing ' +
-      'column with dtype "object"');
+    throw new Error('unsupported operation over data frame columns ' +
+      'with "object" dtype');
   }
 }
 
