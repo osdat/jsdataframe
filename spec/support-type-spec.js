@@ -53,31 +53,6 @@ describe('supporting types:', function() {
     );
   });
 
-  describe('range concatenation:', function() {
-    var rangeCat = jd.rngCat([0, 2], jd.rng(5, 8), -1);
-
-    it('is constructed via jd.rngCat()', function() {
-      expect(rangeCat.type).toBe('jsdataframe.RangeCat');
-    });
-
-    it('responds to rangeCat.ex()', function() {
-      var exclusion = rangeCat.ex();
-      expect(exclusion.type).toBe('jsdataframe.Exclusion');
-    });
-
-    it('cannot contain any exclusions', function() {
-      expect(function() {
-        jd.rngCat([0, 2], jd.rng(5, 8).ex(), -1);
-      }).toThrowError(/exclusion/);
-    });
-
-    it('cannot contain any ByDtype objects', function() {
-      expect(function() {
-        jd.rngCat([0, 2], jd.byDtype('string'), -1);
-      }).toThrowError(/ByDtype/);
-    });
-  });
-
   describe('ByDtype:', function() {
     it('is constructed via jd.byDtype()', function() {
       var byDtype1 = jd.byDtype('string');
@@ -101,7 +76,11 @@ describe('supporting types:', function() {
 
       expect(function() {
         jd.byDtype(['string', 'invalid_dtype']);
-      }).toThrowError(/invalid_dtype/);
+      }).toThrowError(/invalid dtype/);
+
+      expect(function() {
+        jd.byDtype(['string', null]);
+      }).toThrowError(/invalid dtype/);
     });
 
     it('responds to rangeCat.ex()', function() {

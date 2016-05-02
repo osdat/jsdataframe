@@ -48,9 +48,6 @@ dfProto.type = 'jsdataframe.DataFrame';
 var rangeProto = {};
 rangeProto.type = 'jsdataframe.Range';
 
-var rangeCatProto = {};
-rangeCatProto.type = 'jsdataframe.RangeCat';
-
 var byDtypeProto = {};
 byDtypeProto.type = 'jsdataframe.ByDtype';
 
@@ -465,7 +462,12 @@ jd.vCat = function() {
   var defaultDtype = null;
   var outputLen = 0;
   for (var i = 0; i < numArgs; i++) {
-    var vector = ensureVector(arguments[i]);
+    var currArg = arguments[i];
+    if (!isUndefined(currArg) && currArg !== null &&
+      currArg.type === dfProto.type) {
+      throw new Error('cannot pass data frame arguments to jd.vCat');
+    }
+    var vector = ensureVector(currArg);
     if (defaultDtype === null && vector.dtype !== 'object') {
       defaultDtype = vector.dtype;
     }
@@ -1436,8 +1438,7 @@ vectorProto.valueCounts = function() {
   var valCountObj = this._getIndex().valueCounts();
   var df = jd.df([valCountObj.vectors[0], valCountObj.counts],
     ['value', 'count']);
-  // TODO sort by count desc then value asc
-  throw new Error('unimplemented method (TODO)');
+  return df.sort(['count', 'value'], [false, true]);
 };
 
 vectorProto.unique = function() {
@@ -2271,8 +2272,6 @@ dfProto.dropNa = function() {
 */
 
 dfProto.s = function(rowSelect, colSelect) {
-  rowSelect = isUndefined(rowSelect) ? null : rowSelect;
-  colSelect = isUndefined(colSelect) ? null : colSelect;
   var rowIdxVec = standardIndexing(rowSelect, this.nRow());
   var colIdxVec = columnIndexing(colSelect, this._names, this._dtypesVector());
 
@@ -2309,8 +2308,6 @@ dfProto.sMod = function(rowSelect, colSelect, values) {
     values = ensureScalar(values);
   }
 
-  rowSelect = isUndefined(rowSelect) ? null : rowSelect;
-  colSelect = isUndefined(colSelect) ? null : colSelect;
   var rowIdxVec = standardIndexing(rowSelect, this.nRow());
   var colIdxVec = columnIndexing(colSelect, this._names, this._dtypesVector());
   if (colIdxVec === null) {
@@ -2766,34 +2763,6 @@ rangeProto.ex = function() {
 
 
 /*-----------------------------------------------------------------------------
-* RangeCat
-*/
-
-jd.rngCat = function() {
-  var numArgs = arguments.length;
-  var args = allocArray(numArgs);
-  for (var i = 0; i < numArgs; i++) {
-    var arg = arguments[i];
-    if (arg.type === exclusionProto.type) {
-      throw new Error('rngCat must not contain any exclusions');
-    } else if (arg.type === byDtypeProto.type) {
-      throw new Error('rngCat must not contain any ByDtype objects');
-    }
-    args[i] = arg;
-  }
-
-  var rangeCat = Object.create(rangeCatProto);
-  rangeCat._selectors = args;
-  return rangeCat;
-};
-
-
-rangeCatProto.ex = function() {
-  return jd.ex(this);
-};
-
-
-/*-----------------------------------------------------------------------------
 * ByDtype
 */
 
@@ -2848,19 +2817,8 @@ var RESOLVE_MODE = {
 // 'maxLen' should be the total length to index against.
 // Returns null if all rows/elements should be selected in order.
 function standardIndexing(selector, maxLen) {
-  if (selector === null) {
+  if (isUndefined(selector) || selector === null) {
     return null;
-  }
-  if (selector.type === exclusionProto.type) {
-    var intIdxVector = standardIdxHelper(selector._selector, maxLen);
-    return excludeIntIndices(intIdxVector, maxLen);
-  } else {
-    return standardIdxHelper(selector, maxLen);
-  }
-}
-function standardIdxHelper(selector, maxLen) {
-  if (Array.isArray(selector)) {
-    selector = inferVectorDtype(selector, 'number');
   }
 
   // Handle boolean case if applicable
@@ -2879,35 +2837,20 @@ function standardIdxHelper(selector, maxLen) {
 // 'colNames' should be a string vector of column names
 // Returns null if all rows/elements should be selected in order.
 function columnIndexing(selector, colNames, dtypes) {
-  if (selector === null) {
+  if (isUndefined(selector) || selector === null) {
     return null;
-  }
-  if (selector.type === exclusionProto.type) {
-    var intIdxVector = columnIdxHelper(selector._selector, colNames, dtypes);
-    return excludeIntIndices(intIdxVector, colNames.size());
-  } else {
-    return columnIdxHelper(selector, colNames, dtypes);
-  }
-}
-function columnIdxHelper(selector, colNames, dtypes) {
-  var maxLen = colNames.size();
-  if (Array.isArray(selector)) {
-    selector = inferVectorDtype(selector, 'string');
   }
 
   // Handle boolean case if applicable
+  var maxLen = colNames.size();
   var boolIdxResult = attemptBoolIndexing(selector, maxLen);
   if (!isUndefined(boolIdxResult)) {
     return boolIdxResult;
   }
 
-  // Handle ByDtype case if applicable
-  if (selector.type === byDtypeProto.type) {
-    return dtypes.isIn(selector._dtypes).which();
-  }
-
   // Handle integer index / col name lookup hybrid
-  var opts = resolverOpts(RESOLVE_MODE.COL, maxLen, colNames._getIndex());
+  var opts = resolverOpts(RESOLVE_MODE.COL, maxLen,
+    colNames._getIndex(), dtypes);
   return resolveSelector(selector, opts);
 }
 
@@ -2915,28 +2858,27 @@ function columnIdxHelper(selector, colNames, dtypes) {
 // Perform key lookup indexing
 // 'index' should be an AbstractIndex implementation
 function keyIndexing(selector, maxLen, index) {
-  if (selector.type === exclusionProto.type) {
-    var intIdxVector = keyIndexing(selector._selector, maxLen, index);
-    return excludeIntIndices(intIdxVector, maxLen);
-  }
   var opts = resolverOpts(RESOLVE_MODE.KEY, maxLen, index);
   return resolveSelector(selector, opts);
 }
 
 
-// Returns the integer indices resulting from excluding the
-// intIdxVector based on the given maxLen
-function excludeIntIndices(intIdxVector, maxLen) {
-  return jd.seq(maxLen).isIn(intIdxVector).not().which();
-}
-
-
 // Performs boolean indexing if 'selector' is a boolean vector
-// of the same length as maxLen.
+// or array of the same length as maxLen or an exclusion wrapping
+// such a vector or array.
 // Returns undefined if 'selector' is inappropriate for boolean
 // indexing; returns a vector of integer indices if boolean
 // indexing resolves appropriately.
 function attemptBoolIndexing(selector, maxLen) {
+  if (selector.type === exclusionProto.type) {
+    var intIdxVector = attemptBoolIndexing(selector._selector, maxLen);
+    return isUndefined(intIdxVector) ?
+      undefined :
+      excludeIntIndices(intIdxVector, maxLen);
+  }
+  if (Array.isArray(selector)) {
+    selector = inferVectorDtype(selector.slice(), 'object');
+  }
   if (selector.type === vectorProto.type && selector.dtype === 'boolean') {
     if (selector.size() !== maxLen) {
       throw new Error('inappropriate boolean indexer length (' +
@@ -2947,16 +2889,26 @@ function attemptBoolIndexing(selector, maxLen) {
 }
 
 
+// Returns the integer indices resulting from excluding the
+// intIdxVector based on the given maxLen
+function excludeIntIndices(intIdxVector, maxLen) {
+  return jd.seq(maxLen).isIn(intIdxVector).not().which();
+}
+
+
 // Construct options for resolveSelector().
 // 'resolveMode' should be one of the values in RESOLVE_MODE.
 // 'maxLen' should be the total length to index against.
 // 'index' should be an AbstractIndex implementation if given.
-function resolverOpts(resolveMode, maxLen, index) {
+// 'dtypes' should be a string vector of dtypes if given.
+function resolverOpts(resolveMode, maxLen, index, dtypes) {
   index = isUndefined(index) ? null : index;
+  dtypes = isUndefined(dtypes) ? null : dtypes;
   return {
     resolveMode: resolveMode,
     maxLen: maxLen,
-    index: index
+    index: index,
+    dtypes: dtypes,
   };
 }
 
@@ -2969,19 +2921,49 @@ function resolveSelector(selector, opts) {
 }
 // Recursive helper that updates running results in 'resultArr'
 function resolveSelectorHelper(selector, opts, resultArr) {
-  if (typeof selector._resolveSelectorHelper === 'function') {
-    selector._resolveSelectorHelper(opts, resultArr);
-  } else {
-    if (opts.resolveMode === RESOLVE_MODE.KEY && opts.index.arity > 1) {
-      if (!Array.isArray(selector)) {
-        throw new Error('expected compound key for index lookup but got: ' +
+  if (selector !== null && typeof selector === 'object') {
+    if (typeof selector._resolveSelectorHelper === 'function') {
+      selector._resolveSelectorHelper(opts, resultArr);
+      return;
+    }
+    if (Array.isArray(selector)) {
+      for (var i = 0; i < selector.length; i++) {
+        resolveSelectorHelper(selector[i], opts, resultArr);
+      }
+      return;
+    }
+  }
+
+  // Handle scalar case
+  var intInds;
+  switch (opts.resolveMode) {
+    case RESOLVE_MODE.INT:
+      resultArr.push(resolveIntIdx(selector, opts.maxLen));
+      break;
+    case RESOLVE_MODE.COL:
+      if (isNumber(selector)) {
+        resultArr.push(resolveIntIdx(selector, opts.maxLen));
+      } else if (isString(selector) || selector === null) {
+        intInds = opts.index.lookupKey([selector]);
+        processLookupResults(intInds, selector, opts, resultArr);
+      } else {
+        throw new Error('expected integer or string selector but got: ' +
           selector);
       }
-      selector = newVector(selector, 'object');
-    } else {
-      selector = ensureVector(selector);
-    }
-    selector._resolveSelectorHelper(opts, resultArr);
+      break;
+    case RESOLVE_MODE.KEY:
+      if (opts.index.arity === 1) {
+        var expectedDtype = opts.index.initVectors[0].dtype;
+        validateScalarIsDtype(selector, expectedDtype);
+        intInds = opts.index.lookupKey([selector]);
+        processLookupResults(intInds, selector, opts, resultArr);
+      } else {
+        // TODO
+        throw new Error('unimplemented case (TODO)');
+      }
+      break;
+    default:
+      throw new Error('Unrecognized RESOLVE_MODE: ' + opts.resolveMode);
   }
 }
 
@@ -2994,29 +2976,36 @@ vectorProto._resolveSelectorHelper = function(opts, resultArr) {
   switch (opts.resolveMode) {
     case RESOLVE_MODE.INT:
       if (!isNumDtype) {
-        throw new Error('attempted integer indexing using invalid dtype: "' +
-          this.dtype + '"');
+        throw new Error('expected number vector for integer indexing ' +
+          'but got vector with dtype: "' + this.dtype + '"');
       }
       for (i = 0; i < this.values.length; i++) {
         resultArr.push(resolveIntIdx(this.values[i], opts.maxLen));
       }
       break;
     case RESOLVE_MODE.COL:
-      for (i = 0; i < this.values.length; i++) {
-        var currVal = this.values[i];
-        if (isNumDtype || isNumber(currVal)) {
+      if (isNumDtype) {
+        for (i = 0; i < this.values.length; i++) {
           resultArr.push(resolveIntIdx(this.values[i], opts.maxLen));
-        } else if (isStrDtype || isString(currVal)) {
+        }
+      } else if (isStrDtype) {
+        for (i = 0; i < this.values.length; i++) {
+          var currVal = this.values[i];
           intInds = opts.index.lookupKey([currVal]);
           processLookupResults(intInds, currVal, opts, resultArr);
-        } else {
-          throw new Error('expected integer or string selector but got: ' +
-            currVal);
         }
+      } else {
+        throw new Error('expected number or string vector for column ' +
+          'indexing but got vector with dtype: "' + this.dtype + '"');
       }
       break;
     case RESOLVE_MODE.KEY:
       if (opts.index.arity === 1) {
+        var expectedDtype = opts.index.initVectors[0].dtype;
+        if (this.dtype !== expectedDtype) {
+          throw new Error('expected "' + expectedDtype + '" vector for key ' +
+            'lookup but got vector with dtype: "' + this.dtype + '"');
+        }
         var lookupVectors = [this];
         for (i = 0; i < this.values.length; i++) {
           intInds = opts.index.lookup(lookupVectors, i);
@@ -3089,10 +3078,26 @@ function resolveRangeBound(bound, opts, isStop, includeStop) {
 }
 
 
-// RangeCat selector resolution logic
-rangeCatProto._resolveSelectorHelper = function(opts, resultArr) {
-  for (var i = 0; i < this._selectors.length; i++) {
-    resolveSelectorHelper(this._selectors[i], opts, resultArr);
+// ByDtype selector resolution logic
+byDtypeProto._resolveSelectorHelper = function(opts, resultArr) {
+  if (opts.dtypes === null) {
+    throw new Error('ByDtype selector can only be used for column indexing');
+  }
+  var intIdxVector = opts.dtypes.isIn(this._dtypes).which();
+  for (var i = 0; i < intIdxVector.values.length; i++) {
+    resultArr.push(intIdxVector.values[i]);
+  }
+};
+
+
+// Exclusion selector resolution logic
+exclusionProto._resolveSelectorHelper = function(opts, resultArr) {
+  var innerResultArr = [];
+  resolveSelectorHelper(this._selector, opts, innerResultArr);
+  var intIdxVector = excludeIntIndices(newVector(innerResultArr, 'number'),
+    opts.maxLen);
+  for (var i = 0; i < intIdxVector.values.length; i++) {
+    resultArr.push(intIdxVector.values[i]);
   }
 };
 
@@ -3995,6 +4000,16 @@ function validateNonnegInt(value, varName) {
 function validateFunction(value, varName) {
   if (typeof value !== 'function') {
     throw new Error('"' + varName + '" must be a function');
+  }
+}
+
+// Returns undefined or throws an error if invalid
+function validateScalarIsDtype(value, dtype) {
+  var inferredDtype = inferDtype(value);
+  if (inferredDtype !== null && inferredDtype !== dtype) {
+    throw new Error('expected scalar to match dtype "' + dtype +
+      '" but instead got ' + value + ', which has dtype "' +
+      inferredDtype + '"');
   }
 }
 

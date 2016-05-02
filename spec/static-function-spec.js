@@ -721,7 +721,7 @@ describe('static functions:', function() {
         }
       );
 
-      xit('throws an error if any input is a data frame', function() {
+      it('throws an error if any input is a data frame', function() {
         expect(function() {
           jd.vCat(1, 2, jd.df([jd.seq(3), jd.seq(3)]));
         }).toThrowError(/data frame/);

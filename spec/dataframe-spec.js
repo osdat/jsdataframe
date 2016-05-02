@@ -419,17 +419,22 @@ describe('data frame methods:', function() {
 
         it('works for integer range concatenations', function() {
           var df = jd.df([1, 2, 3, 4, 5], ['a', 'b', 'c', 'd', 'e']);
-          var rangeCat = jd.rngCat(
+          var selector1 = [
             jd.rng(-2, undefined), jd.rng(undefined, -2)
-          );
-          expect(df.s(null, rangeCat).names().values)
+          ];
+          expect(df.s(null, selector1).names().values)
             .toEqual(['d', 'e', 'a', 'b', 'c']);
 
-          var rangeCat2 = jd.rngCat(
-            [0, 2], -1, jd.rng(1, 4), jd.rngCat(1, [2, 3])
-          );
-          expect(df.s(null, rangeCat2).names().values).toEqual(
+          var selector2 = [
+            [0, 2], -1, jd.rng(1, 4), [1, [2, 3]]
+          ];
+          expect(df.s(null, selector2).names().values).toEqual(
             ['a', 'c', 'e', 'b', 'c', 'd', 'b', 'c', 'd']
+          );
+
+          var selector3 = [jd.rng(1).ex(), jd.rng(2).ex()];
+          expect(df.s(null, selector3).names().values).toEqual(
+            ['a', 'a', 'b']
           );
         });
 
@@ -451,8 +456,8 @@ describe('data frame methods:', function() {
             .toEqual([]);
           expect(exampleDf1.s(null, jd.rng(1, -1).ex()).names().values)
             .toEqual(['A', 'C']);
-          var rangeCat = jd.rngCat(jd.rng(0, 1), jd.rng(2, undefined));
-          expect(exampleDf1.s(null, rangeCat.ex()).names().values)
+          var selector = jd.ex([jd.rng(0, 1), jd.rng(2, undefined)]);
+          expect(exampleDf1.s(null, selector).names().values)
             .toEqual(['B']);
         });
 
@@ -476,7 +481,7 @@ describe('data frame methods:', function() {
           }).toThrowError(/non-integer/);
 
           expect(function() {
-            exampleDf1.s(null, jd.rngCat([0, 2], NaN));
+            exampleDf1.s(null, [[0, 2], NaN]);
           }).toThrowError(/non-integer/);
         });
 
@@ -490,7 +495,7 @@ describe('data frame methods:', function() {
           }).toThrowError(/non-integer/);
 
           expect(function() {
-            exampleDf1.s(null, jd.rngCat([0, 2], 1.5));
+            exampleDf1.s(null, [[0, 2], 1.5]);
           }).toThrowError(/non-integer/);
         });
       });
@@ -512,6 +517,10 @@ describe('data frame methods:', function() {
           var dtypeVec = jd.vector(['object', 'string']);
           expect(exampleDf1.s(null, jd.byDtype(dtypeVec)).names().values)
             .toEqual(['B']);
+
+          var selector = [jd.byDtype('string'), jd.byDtype('string').ex()];
+          expect(exampleDf1.s(null, selector).names().values)
+            .toEqual(['B', 'A', 'C']);
         });
 
         it('can be reversed with exclusions', function() {
@@ -570,17 +579,24 @@ describe('data frame methods:', function() {
         });
 
         it('works for string range concatenations', function() {
-          var rangeCat = jd.rngCat(
+          var selector1 = [
             jd.rng('d', undefined), jd.rng(undefined, 'c')
-          );
-          expect(df1.s(null, rangeCat).names().values)
+          ];
+          expect(df1.s(null, selector1).names().values)
             .toEqual(['d', 'e', 'a', 'b', 'c']);
 
-          var rangeCat2 = jd.rngCat(
-            ['a', 'c'], 'e', jd.rng('b', 'd'), jd.rngCat('b', ['c', 'd'])
-          );
-          expect(df1.s(null, rangeCat2).names().values).toEqual(
+          var selector2 = [
+            ['a', 'c'], 'e', jd.rng('b', 'd'), ['b', ['c', 'd']]
+          ];
+          expect(df1.s(null, selector2).names().values).toEqual(
             ['a', 'c', 'e', 'b', 'c', 'd', 'b', 'c', 'd']
+          );
+
+          var selector3 = [
+            jd.rng('b').ex(), jd.rng('c').ex()
+          ];
+          expect(df1.s(null, selector3).names().values).toEqual(
+            ['a', 'a', 'b']
           );
         });
 
@@ -597,8 +613,8 @@ describe('data frame methods:', function() {
             .toEqual([]);
           expect(df1.s(null, jd.rng('b', 'd').ex()).names().values)
             .toEqual(['a', 'e']);
-          var rangeCat = jd.rngCat(jd.rng('a', 'b'), jd.rng('d', 'e'));
-          expect(df1.s(null, rangeCat.ex()).names().values).toEqual(['c']);
+          var selector = jd.ex([jd.rng('a', 'b'), jd.rng('d', 'e')]);
+          expect(df1.s(null, selector).names().values).toEqual(['c']);
         });
 
         it('retrieves all occurrences of duplicate column names', function() {
@@ -674,8 +690,8 @@ describe('data frame methods:', function() {
           expect(df1.s(null, jd.rng(2, 'd', true)).names().values)
             .toEqual(['c', 'd']);
 
-          var rangeCat = jd.rngCat(jd.rng('a', 'b'), -1);
-          expect(df1.s(null, rangeCat).names().values)
+          var selector = [jd.rng('a', 'b'), -1];
+          expect(df1.s(null, selector).names().values)
             .toEqual(['a', 'b', 'e']);
         });
 

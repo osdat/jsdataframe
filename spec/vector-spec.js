@@ -215,16 +215,20 @@ describe('vector methods:', function() {
         });
 
         it('works for integer range concatenations', function() {
-          var rangeCat = jd.rngCat(
+          var selector1 = [
             jd.rng(-2, undefined), jd.rng(undefined, -2)
-          );
-          expect(vector.s(rangeCat).values).toEqual([13, 14, 10, 11, 12]);
+          ];
+          expect(vector.s(selector1).values).toEqual([13, 14, 10, 11, 12]);
 
-          var rangeCat2 = jd.rngCat(
-            [0, 2], -1, jd.rng(1, 4), jd.rngCat(1, [2, 3])
-          );
-          expect(vector.s(rangeCat2).values).toEqual(
+          var selector2 = [
+            [0, 2], -1, jd.rng(1, 4), [1, [2, 3]]
+          ];
+          expect(vector.s(selector2).values).toEqual(
             [10, 12, 14, 11, 12, 13, 11, 12, 13]
+          );
+
+          expect(vector.s([jd.rng(1).ex(), jd.rng(2).ex()]).values).toEqual(
+            [10, 10, 11]
           );
         });
 
@@ -238,8 +242,8 @@ describe('vector methods:', function() {
           expect(vector.s(jd.seq(0).ex()).values).toEqual(vector.values);
           expect(vector.s(jd.rng(0, -1, true).ex()).values).toEqual([]);
           expect(vector.s(jd.rng(1, -1).ex()).values).toEqual([10, 14]);
-          var rangeCat = jd.rngCat(jd.rng(0, 2), jd.rng(3, undefined));
-          expect(vector.s(rangeCat.ex()).values).toEqual([12]);
+          var selector = jd.ex([jd.rng(0, 2), jd.rng(3, undefined)]);
+          expect(vector.s(selector).values).toEqual([12]);
         });
 
         it('requires all integer indices to be within bounds', function() {
@@ -262,7 +266,7 @@ describe('vector methods:', function() {
           }).toThrowError(/non-integer/);
 
           expect(function() {
-            vector.s(jd.rngCat([0, 2], NaN));
+            vector.s([[0, 2], NaN]);
           }).toThrowError(/non-integer/);
         });
 
@@ -276,7 +280,7 @@ describe('vector methods:', function() {
           }).toThrowError(/non-integer/);
 
           expect(function() {
-            vector.s(jd.rngCat([0, 2], 1.5));
+            vector.s([[0, 2], 1.5]);
           }).toThrowError(/non-integer/);
         });
 
@@ -290,7 +294,7 @@ describe('vector methods:', function() {
           }).toThrowError(/integer indexing/);
 
           expect(function() {
-            vector.s(jd.rngCat([0, 2], 'string'));
+            vector.s([[0, 2], 'string']);
           }).toThrowError(/integer indexing/);
         });
       });
@@ -1175,7 +1179,7 @@ describe('vector methods:', function() {
     });
 
     describe('vector.valueCounts', function() {
-      xit('sorts results by decreasing count', function() {
+      it('sorts results by decreasing count', function() {
         var expectedDf1 = jd.dfFromMatrixWithHeader([
           ['value', 'count'],
           [NaN, 4],
@@ -1195,7 +1199,7 @@ describe('vector methods:', function() {
         expect(strVec.valueCounts().equals(expectedDf2)).toBe(true);
       });
 
-      xit('resolves ties by sorting values ascending', function() {
+      it('resolves ties by sorting values ascending', function() {
         var vector = jd.vector(['a', 'c', 'b', 'b', 'a', 'c', 'd']);
         var expectedDf = jd.dfFromMatrixWithHeader([
           ['value', 'count'],
