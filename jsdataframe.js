@@ -2344,18 +2344,9 @@ dfProto.c = function(colSelect) {
 
 dfProto.cMod = function(colSelect, colValue) {
   var columns = this._cols.slice();
-  var colNames = this._names;
-  if (isString(colSelect) && !this._names.contains(colSelect)) {
-    // Insert new column at the end
-    columns.push(colValue);
-    var colNameArr = colNames.values.slice();
-    colNameArr.push(colSelect);
-    colNames = newVector(colNameArr, 'string');
-  } else {
-    var intIdx = singleColNameLookup(colSelect, this._names);
-    columns[intIdx] = colValue;
-  }
-  return newDataFrame(columns, colNames);
+  var intIdx = singleColNameLookup(colSelect, this._names);
+  columns[intIdx] = colValue;
+  return newDataFrame(columns, this._names);
 };
 
 
@@ -2716,6 +2707,257 @@ dfProto.sort = function(colSelect, ascending) {
   var argSortIdxArray = argSort(sortDf._cols, ascending.values);
   return this.s(argSortIdxArray);
 };
+
+
+/*-----------------------------------------------------------------------------
+* Joins
+*/
+
+var validOpts = jd.vector([
+  'by', 'leftBy', 'rightBy', 'leftSuffix', 'rightSuffix', 'indicator'
+]);
+
+dfProto.join = function(other, how, opts) {
+  if (isUndefined(other) || other === null || other.type !== dfProto.type) {
+    throw new Error('"other" must be a data frame');
+  }
+  var joinIndicator = false;
+  var leftSuffix = '_x';
+  var rightSuffix = '_y';
+
+  // Validate "how"
+  var allLeft = false;
+  var allRight = false;
+  switch (how) {
+    case 'inner':
+      break;
+    case 'left':
+      allLeft = true;
+      break;
+    case 'right':
+      allRight = true;
+      break;
+    case 'outer':
+      allLeft = true;
+      allRight = true;
+      break;
+    default:
+      throw new Error('"how" must be one of the following strings: ' +
+        '"inner", "left", "right", "outer"');
+  }
+
+  // Check for valid properties in "opts"
+  if (!isUndefined(opts)) {
+    var allOpts = jd.vector(Object.keys(opts));
+    var invalidOpts = allOpts.s(allOpts.isIn(validOpts).not());
+    if (invalidOpts.size() > 0) {
+      throw new Error('invalid properties found int "opts": ' +
+        invalidOpts.strJoin(', '));
+    }
+
+    if (!isUndefined(opts.indicator)) {
+      joinIndicator = opts.indicator;
+    }
+    if (!isUndefined(opts.leftSuffix)) {
+      leftSuffix = opts.leftSuffix;
+    }
+    if (!isUndefined(opts.rightSuffix)) {
+      rightSuffix = opts.rightSuffix;
+    }
+  }
+
+  // Resolve key columns
+  var keyIdxObj = resolveKeyColumns(this, other, opts);
+  var leftKeyIdxVec = keyIdxObj.left;
+  var rightKeyIdxVec = keyIdxObj.right;
+  var leftKeyDf = this.s(null, leftKeyIdxVec);
+  var leftNonKeyDf = this.s(null, leftKeyIdxVec.ex());
+  var rightKeyDf = other.s(null, rightKeyIdxVec);
+  var rightNonKeyDf = other.s(null, rightKeyIdxVec.ex());
+  if (leftKeyDf.dtypes().c('dtype').contains('object') ||
+    rightKeyDf.dtypes().c('dtype').contains('object')) {
+    throw new Error('key columns must not have "object" dtype');
+  }
+  if (!leftKeyDf.dtypes().c('dtype').equals(rightKeyDf.dtypes().c('dtype'))) {
+    throw new Error('key columns must have matching dtypes on left ' +
+      'and right');
+  }
+
+  // Form output column names
+  var nonKeyCommonNames = leftNonKeyDf.names().s(
+    leftNonKeyDf.names().isIn(rightNonKeyDf.names())
+  );
+  var leftNonKeyNames = leftNonKeyDf.names().map(function(name) {
+    return nonKeyCommonNames.contains(name) ?
+      name + leftSuffix:
+      name;
+  });
+  var rightNonKeyNames = rightNonKeyDf.names().map(function(name) {
+    return nonKeyCommonNames.contains(name) ?
+      name + rightSuffix:
+      name;
+  });
+  var colNames = jd.vCat(leftKeyDf.names(), leftNonKeyNames, rightNonKeyNames,
+    (joinIndicator ? ['_join'] : []));
+
+  // Perform join
+  var rightIndex = rightKeyDf._getIndex();
+  var numRows = leftKeyDf.nRow();
+  var rightRowFlags, i;
+  var arrayCols = allocArray(colNames.size());
+  for (i = 0; i < arrayCols.length; i++) {
+    arrayCols[i] = [];
+  }
+  if (allRight) {
+    rightRowFlags = allocArray(rightKeyDf.nRow());
+    for (i = 0; i < rightRowFlags.length; i++) {
+      rightRowFlags[i] = true;
+    }
+  }
+  for (i = 0; i < numRows; i++) {
+    var rightInds = rightIndex.lookup(leftKeyDf._cols, i);
+    if (rightInds === null) {
+      if (allLeft) {
+        appendJoinRow(arrayCols, leftKeyDf, leftNonKeyDf, rightNonKeyDf,
+          i, null, 'leftOnly');
+      }
+    } else if (typeof rightInds === 'number') {
+      appendJoinRow(arrayCols, leftKeyDf, leftNonKeyDf, rightNonKeyDf,
+        i, rightInds, 'both');
+      if (allRight) {
+        rightRowFlags[rightInds] = false;
+      }
+    } else {
+      for (var j = 0; j < rightInds.length; j++) {
+        var rightInd = rightInds[j];
+        appendJoinRow(arrayCols, leftKeyDf, leftNonKeyDf, rightNonKeyDf,
+          i, rightInd, 'both');
+        if (allRight) {
+          rightRowFlags[rightInd] = false;
+        }
+      }
+    }
+  }
+  // Append unmatched rows from right side if requested
+  if (allRight) {
+    var rightKeyDf2 = rightKeyDf.s(rightRowFlags);
+    var rightNonKeyDf2 = rightNonKeyDf.s(rightRowFlags);
+    numRows = rightKeyDf2.nRow();
+    for (i = 0; i < numRows; i++) {
+      appendJoinRow(arrayCols, rightKeyDf2, leftNonKeyDf, rightNonKeyDf2,
+        null, i, 'rightOnly', true);
+    }
+  }
+
+  return newDataFrame(arrayCols, colNames);
+};
+
+
+// Helper for appending values to "arrayCols" from "leftInd" and "rightInd"
+function appendJoinRow(arrayCols, keyDf, leftNonKeyDf, rightNonKeyDf,
+  leftInd, rightInd, indicatorValue, rightIndForKey) {
+
+  var keyInd = rightIndForKey ? rightInd : leftInd;
+  var i, nCol;
+  var colInd = 0;
+  nCol = keyDf.nCol();
+  for (i = 0; i < nCol; i++) {
+    arrayCols[colInd].push(keyDf._cols[i].values[keyInd]);
+    colInd++;
+  }
+  nCol = leftNonKeyDf.nCol();
+  for (i = 0; i < nCol; i++) {
+    var leftVal = (leftInd === null) ? null :
+      leftNonKeyDf._cols[i].values[leftInd];
+    arrayCols[colInd].push(leftVal);
+    colInd++;
+  }
+  nCol = rightNonKeyDf.nCol();
+  for (i = 0; i < nCol; i++) {
+    var rightVal = (rightInd === null) ? null :
+      rightNonKeyDf._cols[i].values[rightInd];
+    arrayCols[colInd].push(rightVal);
+    colInd++;
+  }
+  if (colInd < arrayCols.length) {
+    // Add the join indicator value if there's a final column for it
+    arrayCols[colInd].push(indicatorValue);
+  }
+}
+
+
+// Helper for resolving key columns to integer indices
+function resolveKeyColumns(leftDf, rightDf, opts) {
+  // Resolve key columns to integer indices
+  var leftKeyIdxVec, rightKeyIdxVec;
+  if (isUndefined(opts) ||
+    (isUndefined(opts.by) && isUndefined(opts.leftBy) &&
+      isUndefined(opts.rightBy))) {
+
+    var commonNames = leftDf.names().s(leftDf.names().isIn(rightDf.names()));
+    if (commonNames.nUnique() !== commonNames.size()) {
+      throw new Error('duplicate names found for key columns');
+    }
+    leftKeyIdxVec =
+      columnIndexing(commonNames, leftDf._names, leftDf._dtypesVector());
+    rightKeyIdxVec =
+      columnIndexing(commonNames, rightDf._names, rightDf._dtypesVector());
+  } else {
+    if (!isUndefined(opts.by)) {
+      if (!isUndefined(opts.leftBy) || !isUndefined(opts.rightBy)) {
+        throw new Error('cannot define opts.by, opts.leftBy, and ' +
+          'opts.rightBy all together');
+      }
+      if (opts.by !== null && typeof opts.by === 'object' &&
+        opts.by.type !== vectorProto.type) {
+        // Extract left names from keys and right names from values
+        var leftNames = Object.keys(opts.by);
+        var rightNames = leftNames.map(function(key) {
+          return opts.by[key];
+        });
+        leftKeyIdxVec =
+          columnIndexing(leftNames, leftDf._names, leftDf._dtypesVector());
+        rightKeyIdxVec =
+          columnIndexing(rightNames, rightDf._names, rightDf._dtypesVector());
+      } else {
+        var keyNames = ensureVector(opts.by, 'string');
+        leftKeyIdxVec =
+          columnIndexing(keyNames, leftDf._names, leftDf._dtypesVector());
+        rightKeyIdxVec =
+          columnIndexing(keyNames, rightDf._names, rightDf._dtypesVector());
+        if (keyNames.size() !== leftKeyIdxVec.size()) {
+          throw new Error('duplicate names found for key columns');
+        }
+      }
+    } else {
+      if (isUndefined(opts.leftBy) || isUndefined(opts.rightBy)) {
+        throw new Error('must specify both opts.leftBy and ' +
+          'opts.rightBy together');
+      }
+      leftKeyIdxVec =
+        columnIndexing(opts.leftBy, leftDf._names, leftDf._dtypesVector());
+      rightKeyIdxVec =
+        columnIndexing(opts.rightBy, rightDf._names, rightDf._dtypesVector());
+    }
+  }
+
+  // Check validity of key column indices
+  validateUniqueColInds(leftKeyIdxVec);
+  validateUniqueColInds(rightKeyIdxVec);
+  if (leftKeyIdxVec.size() !== rightKeyIdxVec.size()) {
+    throw new Error('must select the same number of key columns on the ' +
+      'left and right side; instead got ' + leftKeyIdxVec.size() +
+      ', ' + rightKeyIdxVec.size());
+  }
+  if (leftKeyIdxVec.size() === 0 || rightKeyIdxVec.size() === 0) {
+    throw new Error('must select at least one key column to join by');
+  }
+
+  return {
+    left: leftKeyIdxVec,
+    right: rightKeyIdxVec,
+  };
+}
 
 
 /*=============================================================================

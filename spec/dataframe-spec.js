@@ -962,12 +962,10 @@ describe('data frame methods:', function() {
         expect(df1.c(0).equals(jd.rep(-1, 5))).toBe(true);
       });
 
-      it('inserts a new column if column name lookup fails', function() {
-        var df1 = exampleDf1.cMod('D', 'new');
-        expect(df1.nRow()).toBe(5);
-        expect(df1.nCol()).toBe(4);
-        expect(df1.s(null, jd.seq(3)).equals(exampleDf1)).toBe(true);
-        expect(df1.c(3).equals(jd.rep('new', 5))).toBe(true);
+      it('throws an error if column name lookup fails', function() {
+        expect(function() {
+          exampleDf1.cMod('colZ', 'new');
+        }).toThrowError(/colZ/);
       });
 
       it('throws an error if "colValue" has incompatible length', function() {
@@ -2109,6 +2107,289 @@ describe('data frame methods:', function() {
           }).toThrowError(/boolean/);
         }
       );
+    });
+
+  });
+
+  describe('joins:', function() {
+
+    describe('df.join', function() {
+      var joinTestDf1 = jd.dfFromMatrixWithHeader([
+        ['leftKey', 'key2', 'val'],
+        [      'a',    'x',    0 ],
+        [      'b',    'x',    1 ],
+        [      'c',    'y',    2 ],
+        [      'a',    'y',    3 ],
+      ]);
+
+      var joinTestDf2 = jd.dfFromMatrixWithHeader([
+        ['rightKey', 'key2', 'val'],
+        [       'a',    'x',   10 ],
+        [       'd',    'z',   11 ],
+        [       'a',    'y',   12 ],
+        [       'b',    'z',   13 ],
+      ]);
+
+      var fullJoinKey1Df = jd.dfFromMatrixWithHeader([
+        ['leftKey', 'key2_x', 'val_x', 'key2_y', 'val_y',     '_join'],
+        [      'a',      'x',      0 ,      'x',     10 ,      'both'],
+        [      'a',      'x',      0 ,      'y',     12 ,      'both'],
+        [      'b',      'x',      1 ,      'z',     13 ,      'both'],
+        [      'c',      'y',      2 ,     null,    NaN ,  'leftOnly'],
+        [      'a',      'y',      3 ,      'x',     10 ,      'both'],
+        [      'a',      'y',      3 ,      'y',     12 ,      'both'],
+        [      'd',     null,    NaN ,      'z',     11 , 'rightOnly'],
+      ]);
+
+      var fullJoinKey2Df = jd.dfFromMatrixWithHeader([
+        ['key2', 'leftKey', 'val_x', 'rightKey', 'val_y',     '_join'],
+        [   'x',       'a',      0 ,        'a',     10 ,      'both'],
+        [   'x',       'b',      1 ,        'a',     10 ,      'both'],
+        [   'y',       'c',      2 ,        'a',     12 ,      'both'],
+        [   'y',       'a',      3 ,        'a',     12 ,      'both'],
+        [   'z',      null,    NaN ,        'd',     11 , 'rightOnly'],
+        [   'z',      null,    NaN ,        'b',     13 , 'rightOnly'],
+      ]);
+
+      var fullJoinBothKeysDf = jd.dfFromMatrixWithHeader([
+        ['leftKey', 'key2', 'val_x', 'val_y',     '_join'],
+        [      'a',    'x',      0 ,     10 ,      'both'],
+        [      'b',    'x',      1 ,    NaN ,  'leftOnly'],
+        [      'c',    'y',      2 ,    NaN ,  'leftOnly'],
+        [      'a',    'y',      3 ,     12 ,      'both'],
+        [      'd',    'z',    NaN ,     11 , 'rightOnly'],
+        [      'b',    'z',    NaN ,     13 , 'rightOnly'],
+      ]);
+
+
+      // Helper for subsetting joinDf by only selecting rows with
+      // "_join" column containing values in "indicatorValues"
+      var subsetOnIndicator = function(joinDf, indicatorValues) {
+        var boolInd = joinDf.c('_join').isIn(indicatorValues);
+        return joinDf.s(boolInd);
+      };
+
+      it('works for inner joins', function() {
+        var expectedKey1Df = subsetOnIndicator(fullJoinKey1Df,
+          'both').s(null, jd.ex('_join'));
+        var df1 = joinTestDf1.join(joinTestDf2, 'inner',
+          {by: {leftKey: 'rightKey'}});
+        expect(df1.equals(expectedKey1Df)).toBe(true);
+
+        var expectedKey2Df = subsetOnIndicator(fullJoinKey2Df,
+          'both').s(null, jd.ex('_join'));
+        var df2 = joinTestDf1.join(joinTestDf2, 'inner', {by: 'key2'});
+        expect(df2.equals(expectedKey2Df)).toBe(true);
+
+        var expectedKey3Df = subsetOnIndicator(fullJoinBothKeysDf,
+          'both').s(null, jd.ex('_join'));
+        var df3 = joinTestDf1.join(joinTestDf2, 'inner',
+          {leftBy: ['leftKey', 'key2'], rightBy: ['rightKey', 'key2']});
+        expect(df3.equals(expectedKey3Df)).toBe(true);
+      });
+
+      it('works for left outer joins', function() {
+        var expectedKey1Df = subsetOnIndicator(fullJoinKey1Df,
+          ['both', 'leftOnly']).s(null, jd.ex('_join'));
+        var df1 = joinTestDf1.join(joinTestDf2, 'left',
+          {by: {leftKey: 'rightKey'}});
+        expect(df1.equals(expectedKey1Df)).toBe(true);
+
+        var expectedKey2Df = subsetOnIndicator(fullJoinKey2Df,
+          ['both', 'leftOnly']).s(null, jd.ex('_join'));
+        var df2 = joinTestDf1.join(joinTestDf2, 'left', {by: 'key2'});
+        expect(df2.equals(expectedKey2Df)).toBe(true);
+
+        var expectedKey3Df = subsetOnIndicator(fullJoinBothKeysDf,
+          ['both', 'leftOnly']).s(null, jd.ex('_join'));
+        var df3 = joinTestDf1.join(joinTestDf2, 'left',
+          {leftBy: ['leftKey', 'key2'], rightBy: ['rightKey', 'key2']});
+        expect(df3.equals(expectedKey3Df)).toBe(true);
+      });
+
+      it('works for right outer joins', function() {
+        var expectedKey1Df = subsetOnIndicator(fullJoinKey1Df,
+          ['both', 'rightOnly']).s(null, jd.ex('_join'));
+        var df1 = joinTestDf1.join(joinTestDf2, 'right',
+          {by: {leftKey: 'rightKey'}});
+        expect(df1.equals(expectedKey1Df)).toBe(true);
+
+        var expectedKey2Df = subsetOnIndicator(fullJoinKey2Df,
+          ['both', 'rightOnly']).s(null, jd.ex('_join'));
+        var df2 = joinTestDf1.join(joinTestDf2, 'right', {by: 'key2'});
+        expect(df2.equals(expectedKey2Df)).toBe(true);
+
+        var expectedKey3Df = subsetOnIndicator(fullJoinBothKeysDf,
+          ['both', 'rightOnly']).s(null, jd.ex('_join'));
+        var df3 = joinTestDf1.join(joinTestDf2, 'right',
+          {leftBy: ['leftKey', 'key2'], rightBy: ['rightKey', 'key2']});
+        expect(df3.equals(expectedKey3Df)).toBe(true);
+      });
+
+      it('works for full outer joins', function() {
+        var expectedKey1Df = fullJoinKey1Df.s(null, jd.ex('_join'));
+        var df1 = joinTestDf1.join(joinTestDf2, 'outer',
+          {by: {leftKey: 'rightKey'}});
+        expect(df1.equals(expectedKey1Df)).toBe(true);
+
+        var expectedKey2Df = fullJoinKey2Df.s(null, jd.ex('_join'));
+        var df2 = joinTestDf1.join(joinTestDf2, 'outer', {by: 'key2'});
+        expect(df2.equals(expectedKey2Df)).toBe(true);
+
+        var expectedKey3Df = fullJoinBothKeysDf.s(null, jd.ex('_join'));
+        var df3 = joinTestDf1.join(joinTestDf2, 'outer',
+          {leftBy: ['leftKey', 'key2'], rightBy: ['rightKey', 'key2']});
+        expect(df3.equals(expectedKey3Df)).toBe(true);
+      });
+
+      it('can be set to use custom left/right suffixes', function() {
+        var expectedDf = fullJoinKey2Df.s(null, jd.ex('_join'));
+        var df = joinTestDf1.join(joinTestDf2, 'outer',
+          {by: 'key2', leftSuffix: '_left', rightSuffix: '_right'});
+        expect(df.names().values).toEqual([
+          'key2', 'leftKey', 'val_left', 'rightKey', 'val_right'
+        ]);
+        expect(df.resetNames().equals(expectedDf.resetNames())).toBe(true);
+      });
+
+      it('can be set to include the "_join" indicator column', function() {
+        var df1 = joinTestDf1.join(joinTestDf2, 'outer',
+          {by: {leftKey: 'rightKey'}, indicator: true});
+        expect(df1.equals(fullJoinKey1Df)).toBe(true);
+
+        var df2 = joinTestDf1.join(joinTestDf2, 'outer',
+          {by: 'key2', indicator: true});
+        expect(df2.equals(fullJoinKey2Df)).toBe(true);
+
+        var df3 = joinTestDf1.join(joinTestDf2, 'outer',
+          {leftBy: ['leftKey', 'key2'], rightBy: ['rightKey', 'key2'],
+          indicator: true});
+        expect(df3.equals(fullJoinBothKeysDf)).toBe(true);
+      });
+
+      var emptyJoinDf = jd.df([[], [], [], []],
+        ['key2', 'val', 'leftKey', 'rightKey']);
+
+      it('works when there are no matches', function() {
+        var df1 = joinTestDf1.join(joinTestDf2, 'inner');
+        expect(df1.equals(emptyJoinDf)).toBe(true);
+      });
+
+      it('works for 0-row data frames', function() {
+        var df1 = joinTestDf1.join(joinTestDf2.s([]), 'inner');
+        expect(df1.equals(emptyJoinDf)).toBe(true);
+
+        var df2 = joinTestDf1.s([]).join(joinTestDf2, 'inner');
+        expect(df1.equals(emptyJoinDf)).toBe(true);
+      });
+
+      it('treats null keys just like any other value', function() {
+        var leftDf = jd.dfFromMatrixWithHeader([
+          ['key', 'val1'],
+          [ true,     0 ],
+          [ null,     1 ],
+        ]);
+        var rightDf = jd.dfFromMatrixWithHeader([
+          ['key', 'val2'],
+          [ null,    10 ],
+          [ true,    11 ],
+          [ null,    12 ],
+        ]);
+        var expectedDf = jd.dfFromMatrixWithHeader([
+          ['key', 'val1', 'val2'],
+          [ true,     0 ,    11 ],
+          [ null,     1 ,    10 ],
+          [ null,     1 ,    12 ],
+        ]);
+        expect(leftDf.join(rightDf, 'inner').equals(expectedDf)).toBe(true);
+      });
+
+      it('throws an error if "other" is not a data frame', function() {
+        expect(function() {
+          joinTestDf1.join(['invalid'], 'inner');
+        }).toThrowError(/other/);
+      });
+
+      it('throws an error for invalid choice of "how"', function() {
+        expect(function() {
+          joinTestDf1.join(joinTestDf2, 'invalid');
+        }).toThrowError(/how/);
+
+        expect(function() {
+          joinTestDf1.join(joinTestDf2);
+        }).toThrowError(/how/);
+      });
+
+      it('throws an error for invalid properties in "opts"', function() {
+        expect(function() {
+          joinTestDf1.join(joinTestDf2, 'inner', {invalidPropName: 0});
+        }).toThrowError(/opts/);
+      });
+
+      it('throws an error for inconsistent key column dtypes', function() {
+        expect(function() {
+          joinTestDf1.join(joinTestDf2, 'inner',
+            {leftBy: 'key2', rightBy: 'val'});
+        }).toThrowError(/dtypes/);
+      });
+
+      it('throws an error if any key column dtype is "object"', function() {
+        var leftDf = joinTestDf1.insertCol('objCol', jd.rep({}, 4));
+        var rightDf = joinTestDf2.insertCol('objCol', jd.rep({}, 4));
+
+        expect(function() {
+          leftDf.join(rightDf, 'inner', {by: 'objCol'});
+        }).toThrowError(/object/);
+      });
+
+      it('throws an error for competing "by" / "leftBy" / "rightBy" ' +
+        'specifications',
+        function() {
+          expect(function() {
+            joinTestDf1.join(joinTestDf2, 'inner',
+              {by: 'key2', leftBy: 'key2', rightBy: 'key2'});
+          }).toThrowError(/leftBy/);
+        }
+      );
+
+      it('throws an error for inconsistent "leftBy" / "rightBy"', function() {
+        expect(function() {
+          joinTestDf1.join(joinTestDf2, 'inner',
+            {leftBy: ['leftKey', 'key2'], rightBy: ['key2']});
+        }).toThrowError(/number of key column/);
+      });
+
+      it('throws an error for selection of non-present key columns',
+        function() {
+          expect(function() {
+            joinTestDf1.join(joinTestDf2, 'inner',
+              {by: 'invalidCol'});
+          }).toThrowError(/invalidCol/);
+
+          expect(function() {
+            joinTestDf1.join(joinTestDf2, 'inner',
+              {leftBy: 'key2', rightBy: 'invalidCol'});
+          }).toThrowError(/invalidCol/);
+        }
+      );
+
+      it('throws an error for selection of non-unique key columns',
+        function() {
+          var leftDf = joinTestDf1.insertCol('key2', jd.seq(4));
+          var rightDf = joinTestDf2.insertCol('key2', jd.seq(4));
+
+          expect(function() {
+            leftDf.join(rightDf, 'inner', {by: 'key2'});
+          }).toThrowError(/duplicate/);
+        }
+      );
+
+      it('throws an error for empty key column selections', function() {
+        expect(function() {
+          joinTestDf1.join(joinTestDf2, 'inner',
+            {leftBy: [], rightBy: []});
+        }).toThrowError(/key column/);
+      });
     });
 
   });
