@@ -13,7 +13,27 @@
     "jasmine": "^2.4.1",
     "uglify-js": "^2.6.1"
   },
-  "dependencies": {
-    "jsdoc": "^3.4.0"
-  }
+  "files": [
+    "jsdataframe.js",
+    "jsdataframe-min.js",
+    "jsdataframe-min.map"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/osdat/jsdataframe.git"
+  },
+  "keywords": [
+    "dataframe",
+    "data",
+    "frame",
+    "wrangling",
+    "munging",
+    "R",
+    "python",
+    "pandas"
+  ],
+  "bugs": {
+    "url": "https://github.com/osdat/jsdataframe/issues"
+  },
+  "homepage": "https://github.com/osdat/jsdataframe"
 }
