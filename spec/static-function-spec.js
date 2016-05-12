@@ -947,8 +947,24 @@ describe('static functions:', function() {
   });
 
   describe('printing:', function() {
-    describe('printingOpts', function() {
 
+    describe('toPrintString', function() {
+      it('works for vectors', function() {
+        var printStr1 = jd.seq(5).printToString();
+        expect(printStr1.split('\n').length).toBe(6);
+
+        var printStr2 = jd.seq(500).printToString();
+        expect(typeof printStr2).toBe('string');
+      });
+
+      it('works for data frames', function() {
+        var df = jd.df([jd.seq(500), jd.strCat('row ', jd.seq(500))]);
+        var printStr1 = df.head(5).printToString();
+        expect(printStr1.split('\n').length).toBe(7);
+
+        var printStr2 = df.printToString();
+        expect(typeof printStr2).toBe('string');
+      });
     });
   });
 });

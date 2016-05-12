@@ -808,7 +808,7 @@ vectorProto._toTruncatedPrintVector = function(maxLines) {
     var halfCount = Math.ceil(maxLines / 2 - 1);
     var headRange = jd.rng(0, halfCount);
     var tailRange = jd.rng(-halfCount);
-    var printVec = this.s(jd.rngCat(headRange, tailRange))._toPrintVector();
+    var printVec = this.s([headRange, tailRange])._toPrintVector();
     return jd.vCat(
       printVec.s(headRange), _SKIP_MARKER, printVec.s(tailRange));
   } else {
