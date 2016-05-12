@@ -967,4 +967,10 @@ describe('static functions:', function() {
       });
     });
   });
+
+  describe("The jsdataframe version", function() {
+    it("is a string property", function() {
+      expect(typeof jd.version).toBe('string');
+    });
+  });
 });
