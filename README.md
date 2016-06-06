@@ -4,7 +4,8 @@
 data frame functionality in R and Python Pandas.  Vector and data frame
 constructs are implemented to provide vectorized operations, summarization
 methods, subset selection/modification, sorting, grouped
-split-apply-combine operations, database-style joins, and more.
+split-apply-combine operations, database-style joins, reshaping/pivoting,
+JSON serialization, and more.
 It is hoped that users of R and Python Pandas will find the concepts
 in jsdataframe quite familiar.
 

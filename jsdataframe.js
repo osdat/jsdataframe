@@ -531,6 +531,28 @@ jd.dfFromMatrixWithHeader = function(matrix) {
 
 
 /*-----------------------------------------------------------------------------
+* Conversion
+*/
+
+jd.unpack = function(obj) {
+  if (obj.type === vectorProto.type) {
+    return unpackVector(obj);
+  } else if (obj.type === dfProto.type) {
+    var names = unpackVector(obj.names);
+    var cols = obj.cols.map(function(col) {
+      return unpackVector(col);
+    });
+    return jd.df(cols, names);
+  } else {
+    throw new Error('"obj" has unrecognized type: ' + obj.type);
+  }
+};
+function unpackVector(obj) {
+  return jd.vector(obj.values, obj.dtype);
+}
+
+
+/*-----------------------------------------------------------------------------
 * Concatenation
 */
 
@@ -1041,10 +1063,29 @@ vectorProto.toDtype = function(dtype) {
 var coerceToStrInterned = useStringInterning(coerceToStr);
 
 
-vectorProto.serialize = function() {
-  // TODO
-  throw new Error('unimplemented method (TODO)');
+vectorProto.pack = function() {
+  return packVector(this);
 };
+// Helper for packing the given vector, including metadata by default
+function packVector(vector, includeMetadata) {
+  includeMetadata = isUndefined(includeMetadata) ? true : includeMetadata;
+  var dtype = vector.dtype;
+  if (vector.dtype === 'date') {
+    vector = vector.toDtype('number');
+  }
+  var values = (vector.dtype !== 'number') ?
+    vector.values.slice() :
+    vector.values.map(function(x) {
+      return Number.isNaN(x) ? null : x;
+    });
+
+  var result = {dtype: dtype, values: values};
+  if (includeMetadata) {
+    result.version = jd.version;
+    result.type = vectorProto.type;
+  }
+  return result;
+}
 
 
 /*-----------------------------------------------------------------------------
@@ -2285,6 +2326,16 @@ dfProto.toMatrix = function(includeHeader) {
     matrix[i + offset] = rowArray;
   }
   return matrix;
+};
+
+
+dfProto.pack = function() {
+  var result = {type: dfProto.type, version: jd.version};
+  result.names = packVector(this.names(), false);
+  result.cols = this._cols.map(function(colVec) {
+    return packVector(colVec, false);
+  });
+  return result;
 };
 
 

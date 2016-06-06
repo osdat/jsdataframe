@@ -669,6 +669,22 @@ describe('static functions:', function() {
     });
   });
 
+  describe('conversion:', function() {
+    describe('jd.unpack', function() {
+      it('throws an error if "obj" has unrecognized type', function() {
+        expect(function() {
+          jd.unpack({});
+        }).toThrowError(/unrecognized type/);
+
+        expect(function() {
+          jd.unpack({type: 'invalid'});
+        }).toThrowError(/unrecognized type/);
+      });
+
+      // See tests for vector.pack and df.pack
+    });
+  });
+
   describe('concatenation:', function() {
 
     describe('jd.vCat', function() {

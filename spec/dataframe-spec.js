@@ -234,6 +234,18 @@ describe('data frame methods:', function() {
         }
       );
     });
+
+    describe('df.pack', function() {
+      it('behaves as expected', function() {
+        var roundTripDf1 = jd.unpack(JSON.parse(
+          JSON.stringify(exampleDf1.pack())));
+        expect(exampleDf1.equals(roundTripDf1)).toBe(true);
+
+        var roundTripDf2 = jd.unpack(JSON.parse(
+          JSON.stringify(exampleDf2.pack())));
+        expect(exampleDf2.equals(roundTripDf2)).toBe(true);
+      });
+    });
   });
 
   describe('column names:', function() {

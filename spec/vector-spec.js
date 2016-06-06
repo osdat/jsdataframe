@@ -78,6 +78,48 @@ describe('vector methods:', function() {
         }
       );
     });
+
+    describe('vector.pack', function() {
+      it('works for number vectors', function() {
+        var vector = jd.vector([0, 1, 2.5, -1, NaN], 'number');
+        var json = JSON.stringify(vector.pack());
+        var vector2 = jd.unpack(JSON.parse(json));
+        expect(vector2.dtype).toBe('number');
+        expect(vector.equals(vector2)).toBe(true);
+      });
+
+      it('works for boolean vectors', function() {
+        var vector = jd.vector([true, false, true, null], 'boolean');
+        var json = JSON.stringify(vector.pack());
+        var vector2 = jd.unpack(JSON.parse(json));
+        expect(vector2.dtype).toBe('boolean');
+        expect(vector.equals(vector2)).toBe(true);
+      });
+
+      it('works for string vectors', function() {
+        var vector = jd.vector(['test', 'text', '"', '', null], 'string');
+        var json = JSON.stringify(vector.pack());
+        var vector2 = jd.unpack(JSON.parse(json));
+        expect(vector2.dtype).toBe('string');
+        expect(vector.equals(vector2)).toBe(true);
+      });
+
+      it('works for date vectors', function() {
+        var vector = jd.vector([0, 60*60*1e3, null], 'date');
+        var json = JSON.stringify(vector.pack());
+        var vector2 = jd.unpack(JSON.parse(json));
+        expect(vector2.dtype).toBe('date');
+        expect(vector.equals(vector2)).toBe(true);
+      });
+
+      it('works for object vectors without touching the elements', function() {
+        var vector = jd.vector([1.5, 'two', true, null], 'object');
+        var json = JSON.stringify(vector.pack());
+        var vector2 = jd.unpack(JSON.parse(json));
+        expect(vector2.dtype).toBe('object');
+        expect(vector.equals(vector2)).toBe(true);
+      });
+    });
   });
 
   describe('missing values:', function() {
