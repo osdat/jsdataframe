@@ -1577,11 +1577,6 @@ vectorProto.duplicated = function(keep) {
   return this._getIndex().duplicated(keep);
 };
 
-vectorProto.intersect = function() {
-  // TODO
-  throw new Error('unimplemented method (TODO)');
-};
-
 vectorProto.replace = function() {
   // TODO
   throw new Error('unimplemented method (TODO)');
@@ -1600,6 +1595,34 @@ vectorProto._getIndex = function() {
     this._index = newNestedIndex([this]);
   }
   return this._index;
+};
+
+
+/*-----------------------------------------------------------------------------
+* Set Operations
+*/
+
+vectorProto.union = function(other) {
+  validateVectorIsNotDtype(this, 'object');
+  other = ensureVector(other, this.dtype);
+  validateVectorIsDtype(other, this.dtype);
+  return jd.vCat(this, other).unique();
+};
+
+vectorProto.intersect = function(other) {
+  validateVectorIsNotDtype(this, 'object');
+  other = ensureVector(other, this.dtype);
+  validateVectorIsDtype(other, this.dtype);
+  var unique = this.unique();
+  return unique.s(unique.isIn(other));
+};
+
+vectorProto.setdiff = function(other) {
+  validateVectorIsNotDtype(this, 'object');
+  other = ensureVector(other, this.dtype);
+  validateVectorIsDtype(other, this.dtype);
+  var unique = this.unique();
+  return unique.s(unique.isIn(other).ex());
 };
 
 

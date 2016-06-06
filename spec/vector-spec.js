@@ -1323,4 +1323,98 @@ describe('vector methods:', function() {
     });
   });
 
+  describe('set operations:', function() {
+
+    var vector1 = jd.seq(5);
+    var vector2 = jd.seq(3, 8);
+    var emptyVec = jd.seq(0);
+
+    var methods = [
+      'union', 'intersect', 'setdiff'
+    ];
+
+    it('all set operations throw an error for object dtypes', function() {
+      var objVec = vector1.toDtype('object');
+      methods.forEach(function(method) {
+        expect(function() {
+          objVec[method](vector2);
+        }).toThrowError(/"object"/);
+      });
+    });
+
+    it('all set operations throw an error for inconsistent dtypes', function() {
+      var strVec = vector2.toDtype('string');
+      methods.forEach(function(method) {
+        expect(function() {
+          vector1[method](strVec);
+        }).toThrowError(/dtype/);
+      });
+    });
+
+    describe('vector.union', function() {
+      it('works for overlapping sets', function() {
+        expect(vector1.union(vector2).equals(jd.seq(8))).toBe(true);
+        expect(vector1.union(vector1).equals(vector1)).toBe(true);
+        expect(vector1.union([0, 1]).equals(vector1)).toBe(true);
+        expect(vector1.union(2).equals(vector1)).toBe(true);
+      });
+
+      it('works for non-overlapping sets', function() {
+        expect(vector2.union(jd.seq(-3, 0)).values).toEqual([
+          3, 4, 5, 6, 7, -3, -2, -1
+        ]);
+      });
+
+      it('works with empty sets', function() {
+        expect(vector1.union(emptyVec).equals(vector1)).toBe(true);
+        expect(emptyVec.union(vector1).equals(vector1)).toBe(true);
+        expect(emptyVec.union(emptyVec).equals(emptyVec)).toBe(true);
+      });
+
+      it('removes any duplicates', function() {
+        expect(jd.rep(vector1, 3).union(jd.rep(vector2, 5))
+          .equals(jd.seq(8))).toBe(true);
+        expect(jd.seq(0).union(jd.rep(vector2, 5)).equals(vector2)).toBe(true);
+      });
+    });
+
+    describe('vector.intersect', function() {
+      it('works for overlapping sets', function() {
+        expect(vector1.intersect(vector2).equals(jd.seq(3, 5))).toBe(true);
+        expect(vector1.intersect(vector1).equals(vector1)).toBe(true);
+      });
+
+      it('returns an empty vector if there are no common elements', function() {
+        expect(vector1.intersect([10, 11]).equals(emptyVec)).toBe(true);
+        expect(emptyVec.intersect(vector1).equals(emptyVec)).toBe(true);
+        expect(emptyVec.intersect(emptyVec).equals(emptyVec)).toBe(true);
+      });
+
+      it('removes any duplicates', function() {
+        expect(jd.rep(vector1, 3).intersect(jd.rep(vector2, 5))
+          .equals(jd.seq(3, 5))).toBe(true);
+        expect(jd.rep(vector2, 5).intersect(jd.rep(vector2, 5))
+          .equals(vector2)).toBe(true);
+      });
+    });
+
+    describe('vector.setdiff', function() {
+      it('works for overlapping sets', function() {
+        expect(vector1.setdiff(vector2).equals(jd.seq(3))).toBe(true);
+        expect(vector1.setdiff(vector1).equals(emptyVec)).toBe(true);
+      });
+
+      it('works for non-overlapping sets', function() {
+        expect(vector1.setdiff([10, 11]).equals(vector1)).toBe(true);
+        expect(vector1.setdiff(emptyVec).equals(vector1)).toBe(true);
+      });
+
+      it('removes any duplicates', function() {
+        expect(jd.rep(vector1, 3).setdiff(jd.rep(vector2, 5))
+          .equals(jd.seq(3))).toBe(true);
+        expect(jd.rep(vector2, 5).setdiff(10).equals(vector2)).toBe(true);
+      });
+    });
+  });
+
 });
