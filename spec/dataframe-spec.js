@@ -1423,26 +1423,26 @@ describe('data frame methods:', function() {
 
     describe('df.mapRowObjects', function() {
       it('behaves as expected for standard usage', function() {
-        var df1 = exampleDf1.mapRowObjects(function(obj) {
+        var arr1 = exampleDf1.mapRowObjects(function(obj) {
           return obj.B;
         });
-        expect(df1).toEqual(['a', 'b', 'c', 'd', 'e']);
+        expect(arr1).toEqual(['a', 'b', 'c', 'd', 'e']);
 
-        var df2 = exampleDf1.mapRowObjects(function(obj, index) {
+        var arr2 = exampleDf1.mapRowObjects(function(obj, index) {
           return index;
         });
-        expect(df2).toEqual([0, 1, 2, 3, 4]);
+        expect(arr2).toEqual([0, 1, 2, 3, 4]);
 
         var thisArg = {adder: 100};
-        var df3 = exampleDf1.mapRowObjects(function(obj, index, thisArg) {
+        var arr3 = exampleDf1.mapRowObjects(function(obj, index, thisArg) {
           return this.adder + obj.A;
         }, thisArg);
-        expect(df3).toEqual([100, 101, 102, 103, 104]);
+        expect(arr3).toEqual([100, 101, 102, 103, 104]);
       });
 
       it('returns an empty array for 0-row data frames', function() {
-        var df1 = exampleDf1.s([]).mapRowObjects(function(x) { return x; });
-        expect(df1).toEqual([]);
+        var arr1 = exampleDf1.s([]).mapRowObjects(function(x) { return x; });
+        expect(arr1).toEqual([]);
       });
 
       it('throws an error if "func" is not a function', function() {
@@ -1458,26 +1458,26 @@ describe('data frame methods:', function() {
 
     describe('df.mapRowArrays', function() {
       it('behaves as expected for standard usage', function() {
-        var df1 = exampleDf1.mapRowArrays(function(array) {
+        var arr1 = exampleDf1.mapRowArrays(function(array) {
           return array[1];
         });
-        expect(df1).toEqual(['a', 'b', 'c', 'd', 'e']);
+        expect(arr1).toEqual(['a', 'b', 'c', 'd', 'e']);
 
-        var df2 = exampleDf1.mapRowArrays(function(array, index) {
+        var arr2 = exampleDf1.mapRowArrays(function(array, index) {
           return index;
         });
-        expect(df2).toEqual([0, 1, 2, 3, 4]);
+        expect(arr2).toEqual([0, 1, 2, 3, 4]);
 
         var thisArg = {adder: 100};
-        var df3 = exampleDf1.mapRowArrays(function(array, index, thisArg) {
+        var arr3 = exampleDf1.mapRowArrays(function(array, index, thisArg) {
           return this.adder + array[0];
         }, thisArg);
-        expect(df3).toEqual([100, 101, 102, 103, 104]);
+        expect(arr3).toEqual([100, 101, 102, 103, 104]);
       });
 
       it('returns an empty array for 0-row data frames', function() {
-        var df1 = exampleDf1.s([]).mapRowArrays(function(x) { return x; });
-        expect(df1).toEqual([]);
+        var arr1 = exampleDf1.s([]).mapRowArrays(function(x) { return x; });
+        expect(arr1).toEqual([]);
       });
 
       it('throws an error if "func" is not a function', function() {
@@ -1493,26 +1493,26 @@ describe('data frame methods:', function() {
 
     describe('df.mapRowVectors', function() {
       it('behaves as expected for standard usage', function() {
-        var df1 = exampleDf2.mapRowVectors(function(vector) {
+        var arr1 = exampleDf2.mapRowVectors(function(vector) {
           return vector.mean();
         });
-        expect(df1).toEqual([7.5, 8.5, 9.5, 10.5, 11.5]);
+        expect(arr1).toEqual([7.5, 8.5, 9.5, 10.5, 11.5]);
 
-        var df2 = exampleDf2.mapRowVectors(function(array, index) {
+        var arr2 = exampleDf2.mapRowVectors(function(array, index) {
           return index;
         });
-        expect(df2).toEqual([0, 1, 2, 3, 4]);
+        expect(arr2).toEqual([0, 1, 2, 3, 4]);
 
         var thisArg = {adder: 100};
-        var df3 = exampleDf2.mapRowVectors(function(vector, index, thisArg) {
+        var arr3 = exampleDf2.mapRowVectors(function(vector, index, thisArg) {
           return this.adder + vector.at(0);
         }, thisArg);
-        expect(df3).toEqual([100, 101, 102, 103, 104]);
+        expect(arr3).toEqual([100, 101, 102, 103, 104]);
       });
 
       it('returns an empty array for 0-row data frames', function() {
-        var df1 = exampleDf2.s([]).mapRowVectors(function(x) { return x; });
-        expect(df1).toEqual([]);
+        var arr1 = exampleDf2.s([]).mapRowVectors(function(x) { return x; });
+        expect(arr1).toEqual([]);
       });
 
       it('throws an error if "df.allDtype" is null', function() {
@@ -1532,6 +1532,41 @@ describe('data frame methods:', function() {
           exampleDf2.mapRowVectors('not a function');
         }).toThrowError(/function/);
       });
+    });
+  });
+
+  describe('df.mapRowDfs', function() {
+    it('behaves as expected for standard usage', function() {
+      var arr1 = exampleDf1.mapRowDfs(function(df) {
+        return df.at(0, 'B');
+      });
+      expect(arr1).toEqual(['a', 'b', 'c', 'd', 'e']);
+
+      var arr2 = exampleDf1.mapRowDfs(function(df, index) {
+        return index;
+      });
+      expect(arr2).toEqual([0, 1, 2, 3, 4]);
+
+      var thisArg = {adder: 100};
+      var arr3 = exampleDf1.mapRowDfs(function(df, index, thisArg) {
+        return this.adder + df.at(0, 0);
+      }, thisArg);
+      expect(arr3).toEqual([100, 101, 102, 103, 104]);
+    });
+
+    it('returns an empty array for 0-row data frames', function() {
+      var arr1 = exampleDf1.s([]).mapRowDfs(function(x) { return x; });
+      expect(arr1).toEqual([]);
+    });
+
+    it('throws an error if "func" is not a function', function() {
+      expect(function() {
+        exampleDf2.mapRowDfs();
+      }).toThrowError(/function/);
+
+      expect(function() {
+        exampleDf2.mapRowDfs('not a function');
+      }).toThrowError(/function/);
     });
   });
 

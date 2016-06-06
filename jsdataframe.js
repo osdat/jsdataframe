@@ -2668,6 +2668,17 @@ dfProto.mapRowVectors = function(func, thisArg) {
 };
 
 
+dfProto.mapRowDfs = function(func, thisArg) {
+  validateFunction(func, 'func');
+  var nRow = this.nRow();
+  var rowDfs = allocArray(nRow);
+  for (var i = 0; i < nRow; i++) {
+    rowDfs[i] = this.s(i);   // could be optimized
+  }
+  return rowDfs.map(func, thisArg);
+};
+
+
 /*-----------------------------------------------------------------------------
 * Row Uniqueness
 */
