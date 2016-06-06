@@ -1236,6 +1236,21 @@ vectorProto.findIndex = function() {
 };
 
 
+vectorProto.indexOf = function(searchElement) {
+  if (this.dtype === 'object') {
+    return this.values.indexOf(searchElement);
+  }
+  var intInds = this._getIndex().lookupKey([searchElement]);
+  if (intInds === null) {
+    return -1;
+  } else if (typeof intInds === 'number') {
+    return intInds;
+  } else {
+    return intInds[0];
+  }
+};
+
+
 vectorProto.sort = function(compareFunction) {
   if (isUndefined(compareFunction)) {
     compareFunction = compare;
@@ -2532,6 +2547,17 @@ dfProto.at = function(i, j) {
     throw new Error('expected "j" to be an integer or string but got: ' + j);
   }
   return this._cols[j].values[i];
+};
+
+
+dfProto.locAt = function(lookupCols, lookupKey, colSelect) {
+  var lookupVec = this.c(lookupCols);
+  var colIdx = singleColNameLookup(colSelect, this._names);
+  var rowIdx = lookupVec.indexOf(lookupKey);
+  if (rowIdx === -1) {
+    throw new Error('no match for lookup key: ' + lookupKey);
+  }
+  return this._cols[colIdx].values[rowIdx];
 };
 
 

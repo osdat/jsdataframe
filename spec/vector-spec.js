@@ -608,6 +608,22 @@ describe('vector methods:', function() {
       });
     });
 
+    describe('vector.indexOf', function() {
+      it('behaves as expected', function() {
+        expect(exampleNumVec.indexOf(1)).toBe(2);
+        expect(exampleNumVec.indexOf(20)).toBe(3);
+        expect(exampleNumVec.indexOf(-10)).toBe(-1);
+      });
+
+      it('works for "object" dtype too', function() {
+        var obj = {a: 1};
+        var objVec = jd.vector([1, 'two', obj, null, 'two'], 'object');
+        expect(objVec.indexOf('two')).toBe(1);
+        expect(objVec.indexOf(obj)).toBe(2);
+        expect(objVec.indexOf({})).toBe(-1);
+      });
+    });
+
     describe('vector.sort', function() {
 
       it('behaves as expected without modifying the original vector',

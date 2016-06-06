@@ -1123,6 +1123,36 @@ describe('data frame methods:', function() {
       );
     });
 
+    describe('df.locAt', function() {
+      it('behaves as expected given valid inputs', function() {
+        expect(exampleDf1.locAt('B', 'c', 'A')).toBe(2);
+        expect(exampleDf1.locAt(0, 3, 1)).toBe('d');
+      });
+
+      it('selects the first occurrence of the "lookupKey"', function() {
+        var dupDf = exampleDf1.sMod(jd.rng(-2), 'B', 'b');
+        expect(exampleDf1.locAt('B', 'b', 'A')).toBe(1);
+      });
+
+      it('throws an error if lookup fails', function() {
+        expect(function() {
+          exampleDf1.locAt('B', 'missing key', 'A');
+        }).toThrowError(/no match for lookup key/);
+      });
+
+      it('throws an error for invalid "lookupCols"', function() {
+        expect(function() {
+          exampleDf1.locAt(['A', 'B'], [1, 'b'], 'C');
+        }).toThrowError(/single scalar/);
+      });
+
+      it('throws an error for invalid "colSelect"', function() {
+        expect(function() {
+          exampleDf1.locAt('B', 'c', 'colZ');
+        }).toThrowError(/colZ/);
+      });
+    });
+
     describe('df.head', function() {
       var df1 = jd.df([jd.seq(10), 10], ['A', 'B']);
 
