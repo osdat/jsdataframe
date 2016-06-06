@@ -2109,6 +2109,239 @@ describe('data frame methods:', function() {
       );
     });
 
+    describe('df.melt', function() {
+      var meltTestDf = jd.dfFromMatrixWithHeader([
+        ['id1', 'A', 'id2', 'B', 'C'],
+        [  'a',  0,    'x',  10,  20],
+        [  'b',  1,    'y',  11,  21],
+        [  'c',  2,    'z',  12,  22],
+      ]);
+
+      var expectedDf1 = jd.dfFromMatrixWithHeader([
+        ['id1', 'id2', 'variable', 'value'],
+        [  'a',   'x',        'A',      0 ],
+        [  'b',   'y',        'A',      1 ],
+        [  'c',   'z',        'A',      2 ],
+        [  'a',   'x',        'B',     10 ],
+        [  'b',   'y',        'B',     11 ],
+        [  'c',   'z',        'B',     12 ],
+        [  'a',   'x',        'C',     20 ],
+        [  'b',   'y',        'C',     21 ],
+        [  'c',   'z',        'C',     22 ],
+      ]);
+
+      it('works with just 1 id column', function() {
+        var expectedDf = jd.dfFromMatrixWithHeader([
+          ['id2', 'variable', 'value'],
+          [  'x',      'id1',     'a'],
+          [  'y',      'id1',     'b'],
+          [  'z',      'id1',     'c'],
+          [  'x',        'A',      0 ],
+          [  'y',        'A',      1 ],
+          [  'z',        'A',      2 ],
+          [  'x',        'B',     10 ],
+          [  'y',        'B',     11 ],
+          [  'z',        'B',     12 ],
+          [  'x',        'C',     20 ],
+          [  'y',        'C',     21 ],
+          [  'z',        'C',     22 ],
+        ]);
+
+        expect(meltTestDf.melt('id2').equals(expectedDf)).toBe(true);
+      });
+
+      it('works with multiple id columns', function() {
+        var meltDf1 = meltTestDf.melt(['id1', 'id2']);
+        expect(meltDf1.equals(expectedDf1)).toBe(true);
+
+        var meltDf2 = meltTestDf.melt(['id2', 'id1']);
+        expect(meltDf2.names().values).toEqual([
+          'id2', 'id1', 'variable', 'value'
+        ]);
+        expect(meltDf2.s(null, ['id1', 'id2', 'variable', 'value']).equals(
+          meltDf1)).toBe(true);
+
+        var expectedDf3 = jd.dfFromMatrixWithHeader([
+          ['A', 'id1', 'B', 'id2', 'variable', 'value'],
+          [ 0 ,   'a',  10,   'x',        'C',     20 ],
+          [ 1 ,   'b',  11,   'y',        'C',     21 ],
+          [ 2 ,   'c',  12,   'z',        'C',     22 ],
+        ]);
+        var meltDf3 = meltTestDf.melt(['A', 'id1', 'B', 'id2']);
+        expect(meltDf3.equals(expectedDf3)).toBe(true);
+      });
+
+      it('works with 0 id columns', function() {
+        var expectedDf = jd.dfFromMatrixWithHeader([
+          ['variable', 'value'],
+          [     'id1',     'a'],
+          [     'id1',     'b'],
+          [     'id1',     'c'],
+          [       'A',      0 ],
+          [       'A',      1 ],
+          [       'A',      2 ],
+          [     'id2',     'x'],
+          [     'id2',     'y'],
+          [     'id2',     'z'],
+          [       'B',     10 ],
+          [       'B',     11 ],
+          [       'B',     12 ],
+          [       'C',     20 ],
+          [       'C',     21 ],
+          [       'C',     22 ],
+        ]);
+        expect(meltTestDf.melt([]).equals(expectedDf)).toBe(true);
+      });
+
+      it('uses "varName" and "valueName" when specified', function() {
+        var meltDf1 = meltTestDf.melt(['id1', 'id2'], 'varName');
+        expect(meltDf1.names().values).toEqual([
+          'id1', 'id2', 'varName', 'value'
+        ]);
+        expect(meltDf1.resetNames().equals(expectedDf1.resetNames()))
+          .toBe(true);
+
+        var meltDf2 = meltTestDf.melt(['id1', 'id2'], 'varName', 'valueName');
+        expect(meltDf2.names().values).toEqual([
+          'id1', 'id2', 'varName', 'valueName'
+        ]);
+        expect(meltDf2.resetNames().equals(expectedDf1.resetNames()))
+          .toBe(true);
+      });
+
+      it('throws an error if "idVars" makes duplicate selections',
+        function() {
+          expect(function() {
+            meltTestDf.melt(['id1', 'id2', 'id1']);
+          }).toThrowError(/duplicate/);
+        }
+      );
+
+      it('throws an error if all columns are id columns', function() {
+        expect(function() {
+          meltTestDf.melt(meltTestDf.names());
+        }).toThrowError(/idVars/);
+      });
+    });
+
+    describe('df.pivot', function() {
+      var pivotTestDf = jd.dfFromMatrixWithHeader([
+        ['W', 'X', 'Y', 'Z'],
+        ['a', 'u', 'B',  5 ],
+        ['a', 'v', 'A', NaN],
+        ['b', 'u', 'A',  7 ],
+        ['b', 'v', 'B',  8 ],
+        ['c', 'u', 'B',  9 ],
+      ]);
+
+      var expectedDf1 = jd.dfFromMatrixWithHeader([
+        ['W', 'X', 'A', 'B'],
+        ['a', 'u', NaN,  5 ],
+        ['a', 'v', NaN, NaN],
+        ['b', 'u',  7 , NaN],
+        ['b', 'v', NaN,  8 ],
+        ['c', 'u', NaN,  9 ],
+      ]);
+
+      var expectedDf2 = jd.dfFromMatrixWithHeader([
+        ['W', 'A', 'B'],
+        ['a', NaN,  5 ],
+        ['b',  7 ,  8 ],
+        ['c', NaN,  9 ],
+      ]);
+
+      it('works with no "idVar" or "aggFunc" specified', function() {
+        var pivotDf = pivotTestDf.pivot('Y', 'Z');
+        expect(pivotDf.equals(expectedDf1)).toBe(true);
+      });
+
+      it('works with "idVar" selecting a subset of id columns', function() {
+        var pivotDf = pivotTestDf.pivot('Y', 'Z', {idVars: 'W'});
+        expect(pivotDf.equals(expectedDf2)).toBe(true);
+      });
+
+      it('works with "aggFunc" specified', function() {
+        var aggFunc = function(vec) {
+          var mean = vec.mean();
+          return Number.isNaN(mean) ? -1 : mean;
+        };
+
+        var pivotDf1 = pivotTestDf.pivot('Y', 'Z',
+          {idVars: 'W', aggFunc: aggFunc});
+        var expected1 = expectedDf2.sMod(0, 'A', -1);
+        expect(pivotDf1.equals(expected1)).toBe(true);
+
+        var expected2 = jd.dfFromMatrixWithHeader([
+          ['X', 'A', 'B'],
+          ['u',  7 ,  7 ],
+          ['v', -1 ,  8 ],
+        ]);
+        var pivotDf2 = pivotTestDf.pivot('Y', 'Z',
+          {idVars: 'X', aggFunc: aggFunc});
+        expect(pivotDf2.equals(expected2)).toBe(true);
+      });
+
+      it('works with "fillValue" specified', function() {
+        var pivotDf1 = pivotTestDf.pivot('Y', 'Z', {fillValue: -1});
+        var expected1 = expectedDf1.updateCols(['A', 'B'], function(vec) {
+          return vec.replaceNa(-1);
+        });
+        expect(pivotDf1.equals(expected1)).toBe(true);
+
+        var pivotDf2 = pivotTestDf.pivot('Y', 'Z',
+          {idVars: 'W', fillValue: -1});
+        var expected2 = expectedDf2.updateCols(['A', 'B'], function(vec) {
+          return vec.replaceNa(-1);
+        });
+        expect(pivotDf2.equals(expected2)).toBe(true);
+      });
+
+      it('throws an error if aggregation is required but "aggFunc" is missing',
+        function() {
+          expect(function() {
+            pivotTestDf.pivot('Y', 'Z', {idVars: 'X'});
+          }).toThrowError(/aggFunc/);
+        }
+      );
+
+      it('throws an error if there are no id columns', function() {
+        expect(function() {
+          pivotTestDf.pivot('Y', 'Z', {idVars: []});
+        }).toThrowError(/id columns/);
+
+        expect(function() {
+          pivotTestDf.s(null, ['Y', 'Z']).pivot('Y', 'Z');
+        }).toThrowError(/id columns/);
+      });
+
+      it('throws an error if "pivotCol" and "valueCol" are the same',
+        function() {
+          expect(function() {
+            pivotTestDf.pivot('Y', 'Y');
+          }).toThrowError(/pivotCol/);
+        }
+      );
+
+      it('throws an error if "idVars" overlaps with pivot or value column',
+        function() {
+          expect(function() {
+            pivotTestDf.pivot('Y', 'Z', {idVars: ['W', 'Y']});
+          }).toThrowError(/idVars/);
+
+          expect(function() {
+            pivotTestDf.pivot('Y', 'Z', {idVars: ['W', 'Z']});
+          }).toThrowError(/idVars/);
+        }
+      );
+
+      it('throws an error if "opts" contains unrecognized properties',
+        function() {
+          expect(function() {
+            pivotTestDf.pivot('Y', 'Z', {invalidProp: 10});
+          }).toThrowError(/invalidProp/);
+        }
+      );
+    });
   });
 
   describe('joins:', function() {

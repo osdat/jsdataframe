@@ -16,7 +16,7 @@
 
 var jd = exports;
 
-jd.version = '0.1.1';
+jd.version = '0.2.0';
 
 
 /*-----------------------------------------------------------------------------
@@ -2789,11 +2789,90 @@ dfProto.sort = function(colSelect, ascending) {
 };
 
 
+dfProto.melt = function(idVars, varName, valueName) {
+  varName = (isUndefined(varName) || varName === null) ? 'variable' :
+    ensureScalar(varName).toString();
+  valueName = (isUndefined(valueName) || valueName === null) ? 'value' :
+    ensureScalar(valueName).toString();
+
+  var idIdxVec = columnIndexing(idVars, this._names, this._dtypesVector());
+  var valIdxVec = jd.seq(this.nCol()).s(jd.ex(idIdxVec));
+  if (valIdxVec.size() === 0) {
+    throw new Error('"idVars" must not select all columns in the data frame');
+  }
+  validateUniqueColInds(idIdxVec);
+
+  // Construct id vectors
+  var idDf = this.mapCols(idIdxVec, function(colVec) {
+    return jd.rep(colVec, valIdxVec.size());
+  });
+
+  // Construct 'variable' column
+  var varVec = jd.repEach(this.names().s(valIdxVec), this.nRow());
+
+  // Construct 'value' column
+  var valVec = jd.vCat.apply(jd, this.s(null, valIdxVec).colArray());
+
+  return jd.colCat(idDf, jd.df([varVec, valVec], [varName, valueName]));
+};
+
+
+dfProto.pivot = function(pivotCol, valueCol, opts) {
+  opts = isUndefined(opts) ? {} : opts;
+  validateOptsProperties(opts, ['idVars', 'aggFunc', 'fillValue']);
+  var aggFunc = opts.aggFunc;
+  var fillValue = opts.fillValue;
+
+  var pivotIdx = singleColNameLookup(pivotCol, this._names);
+  var valueIdx = singleColNameLookup(valueCol, this._names);
+  if (pivotIdx === valueIdx) {
+    throw new Error('"pivotCol" and "valueCol" must be different');
+  }
+
+  var idIdxVec;
+  if (isUndefined(opts.idVars)) {
+    idIdxVec = jd.seq(this.nCol()).s(jd.ex([pivotIdx, valueIdx]));
+  } else {
+    idIdxVec = columnIndexing(opts.idVars, this._names, this._dtypesVector());
+    if (idIdxVec === null) {
+      idIdxVec = jd.seq(this.nCol());
+    }
+    validateUniqueColInds(idIdxVec);
+  }
+  if (idIdxVec.contains(pivotIdx) || idIdxVec.contains(valueIdx)) {
+    throw new Error('"idVars" must not include pivotCol or valueCol');
+  }
+  if (idIdxVec.size() === 0) {
+    throw new Error('one or more columns must be selected as id columns');
+  }
+
+  var pivotColDf = jd.df([this.c(pivotIdx).unique().sort()], ['variable']);
+  var relevantCols = jd.vCat(idIdxVec, pivotIdx, valueIdx);
+  var trimmedDf = this.s(null, relevantCols);
+  var result = trimmedDf.groupApply(jd.rng(0, -2), function(subDf) {
+    subDf = subDf.setNames(['variable', 'value']);
+    if (!isUndefined(aggFunc)) {
+      subDf = subDf.groupApply('variable', function(valueDf) {
+        return aggFunc(valueDf.c(0));
+      }, 'value');
+    }
+    var orderedDf = pivotColDf.join(subDf, 'left');
+    if (orderedDf.nRow() !== pivotColDf.nRow()) {
+      throw new Error('must provide "aggFunc" when aggregation is required');
+    }
+    return isUndefined(fillValue) ? orderedDf.c('value') :
+      orderedDf.c('value').replaceNa(fillValue);
+  }, pivotColDf.c('variable'));
+
+  return result;
+};
+
+
 /*-----------------------------------------------------------------------------
 * Joins
 */
 
-var validOpts = jd.vector([
+var validJoinOpts = jd.vector([
   'by', 'leftBy', 'rightBy', 'leftSuffix', 'rightSuffix', 'indicator'
 ]);
 
@@ -2828,12 +2907,7 @@ dfProto.join = function(other, how, opts) {
 
   // Check for valid properties in "opts"
   if (!isUndefined(opts)) {
-    var allOpts = jd.vector(Object.keys(opts));
-    var invalidOpts = allOpts.s(allOpts.isIn(validOpts).not());
-    if (invalidOpts.size() > 0) {
-      throw new Error('invalid properties found int "opts": ' +
-        invalidOpts.strJoin(', '));
-    }
+    validateOptsProperties(opts, validJoinOpts);
 
     if (!isUndefined(opts.indicator)) {
       joinIndicator = opts.indicator;
@@ -4355,6 +4429,17 @@ function validateDataFrameHasNoObjectCols(df) {
   if (df._dtypesVector().contains('object')) {
     throw new Error('unsupported operation over data frame columns ' +
       'with "object" dtype');
+  }
+}
+
+// Returns undefined or throws an error if invalid
+function validateOptsProperties(opts, validProperties) {
+  var validProps = ensureVector(validProperties);
+  var allOpts = jd.vector(Object.keys(opts), 'string');
+  var invalidOpts = allOpts.s(allOpts.isIn(validProps).not());
+  if (invalidOpts.size() > 0) {
+    throw new Error('invalid properties found in "opts": ' +
+      invalidOpts.strJoin(', '));
   }
 }
 
