@@ -1,4 +1,8 @@
 
+## 0.2.1
+
+* Fix property access for reserved words
+
 ## 0.2.0
 
 * Implement `df.melt` and `df.pivot` for reshaping data frames

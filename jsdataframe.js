@@ -16,7 +16,7 @@
 
 var jd = exports;
 
-jd.version = '0.2.0';
+jd.version = '0.2.1';
 
 
 /*-----------------------------------------------------------------------------
@@ -1823,14 +1823,14 @@ function meanReducer(stats, x) {
 
 
 numVecProto.stdev = function(skipNa) {
-  var variance = this.var(skipNa);
+  var variance = this['var'](skipNa);
   return Number.isNaN(variance) ? NaN : Math.sqrt(variance);
 };
 
 
 // Implement the "online algorithm" for variance:
 // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Online_algorithm
-numVecProto.var = function(skipNa) {
+numVecProto['var'] = function(skipNa) {
   if (isUndefined(skipNa)) {
     skipNa = true;
   }
@@ -3835,7 +3835,7 @@ abstractIndexProto.duplicated = function(keep) {
 // This implementation uses nested objects to handle multiple vectors.
 
 var ESCAPED_KEYS = {
-  null: '_INTERNAL_JSDATAFRAME_NULL_KEY_',
+  'null': '_INTERNAL_JSDATAFRAME_NULL_KEY_',
   undefined: '_INTERNAL_JSDATAFRAME_UNDEFINED_KEY_'
 };
 
@@ -3844,7 +3844,7 @@ var ESCAPED_KEYS = {
 // collisions for missing values
 function cleanKey(key, dtype) {
   return (
-    key === null ? ESCAPED_KEYS.null :
+    key === null ? ESCAPED_KEYS['null'] :
     isUndefined(key) ? ESCAPED_KEYS.undefined :
     dtype === 'date' ? key.valueOf() :
     key
@@ -4394,7 +4394,7 @@ function elemToString(element) {
 // Sort order within different types of missing values
 var MISSING_ORDER = {
   undefined: 0,
-  null: 1,
+  'null': 1,
   NaN: 2
 };
 
